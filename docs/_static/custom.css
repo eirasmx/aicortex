@@ -1,0 +1,104 @@
+/* ─────────────────────────────────────────────────────────────
+   AI Cortex — Custom Sphinx theme overrides
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Brand colours ─────────────────────────────────────────── */
+:root {
+  --brand-primary:   #6c63ff;
+  --brand-secondary: #2dd4bf;
+  --brand-dark:      #1a1a2e;
+  --code-bg:         #1e1e2e;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+.bd-sidebar-primary {
+  background: var(--brand-dark);
+}
+
+.bd-sidebar-primary a {
+  color: #c9d1d9 !important;
+}
+
+.bd-sidebar-primary a:hover,
+.bd-sidebar-primary a.active {
+  color: var(--brand-secondary) !important;
+}
+
+/* ── Top nav / header ───────────────────────────────────────── */
+.bd-header {
+  border-bottom: 2px solid var(--brand-primary);
+}
+
+/* ── Code blocks ────────────────────────────────────────────── */
+pre {
+  background: var(--code-bg) !important;
+  border-left: 3px solid var(--brand-primary);
+  border-radius: 6px;
+}
+
+code {
+  background: rgba(108, 99, 255, 0.12);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.88em;
+}
+
+/* ── Admonitions ────────────────────────────────────────────── */
+.admonition.tip,
+.admonition.note {
+  border-left-color: var(--brand-secondary);
+}
+
+.admonition.warning {
+  border-left-color: #f59e0b;
+}
+
+.admonition.danger,
+.admonition.important {
+  border-left-color: #ef4444;
+}
+
+/* ── Heading anchors ────────────────────────────────────────── */
+h1, h2, h3, h4 {
+  font-weight: 700;
+}
+
+h1 a.headerlink,
+h2 a.headerlink {
+  color: var(--brand-primary);
+}
+
+/* ── Badge row in sidebar logo ──────────────────────────────── */
+#sidebar_mini {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+
+#sidebar_mini img {
+  height: 20px;
+}
+
+/* ── Copy button ────────────────────────────────────────────── */
+button.copybtn {
+  background: var(--brand-primary);
+  border: none;
+  border-radius: 4px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+button.copybtn:hover {
+  opacity: 1;
+}
+
+/* ── Announcement banner ────────────────────────────────────── */
+.bd-header-announcement {
+  background: linear-gradient(90deg, var(--brand-primary), var(--brand-secondary));
+  color: #fff;
+  font-weight: 600;
+  text-align: center;
+  padding: 6px;
+}

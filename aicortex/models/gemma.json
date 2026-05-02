@@ -1,0 +1,47 @@
+{
+    "props": {
+        "pageProps": {
+            "models": [
+                {
+                    "id": "386573ca-b2d9-413d-9e8f-913810315f97",
+                    "ip_port": "http://5.149.249.212:11434",
+                    "model_name": "gpt-oss:20b",
+                    "model": "gpt-oss:20b",
+                    "modified_at": "2025-08-07T04:26:17.687694735Z",
+                    "size": "3338801804",
+                    "digest": "a2af6cc3eb7fa8be8504abaf9b04e88f17a119ec3f04a3addf55f92841195f5a",
+                    "parent_model": "",
+                    "format": "gguf",
+                    "family": "gemma3",
+                    "parameter_size": "4.3B",
+                    "quantization_level": "Q4_K_M",
+                    "date_added": "2025-08-07T04:26:17.687694735Z",
+                    "ip_city_name_en": "Amsterdam",
+                    "ip_continent_code": "EU",
+                    "ip_continent_name_en": "Europe",
+                    "ip_country_name_en": "The Netherlands",
+                    "ip_country_iso_code": "NL",
+                    "ip_subdivision_1_name_en": "North Holland",
+                    "ip_subdivision_2_name_en": "Gemeente Amsterdam",
+                    "ip_autonomous_system_number": 59711,
+                    "ip_autonomous_system_organization": "HZ Hosting Ltd",
+                    "ip_connection_type": "Corporate",
+                    "ip_isp": "HZ Hosting Ltd",
+                    "ip_organization": "Unknown",
+                    "ip_user_type": "hosting",
+                    "perf_response_text": "I am Gemma, an open-weights AI assistant. I'm a large language model trained by Google DeepMind. My purpose is to help users by understanding and responding to their requests in a helpful, informative, and comprehensive way.\n\nWhat can I do for you today?",
+                    "perf_tokens": 57,
+                    "perf_time_seconds": "4.38",
+                    "perf_tokens_per_second": "13.01",
+                    "perf_max_token_speed": "78.13",
+                    "perf_avg_token_speed": "59.27",
+                    "perf_first_token_time": "3.597",
+                    "perf_model_size_bytes": "5443152417",
+                    "perf_status": "success",
+                    "perf_error": null,
+                    "perf_last_tested": "2025-04-19T08:24:12.000Z"
+                }
+            ]
+        }
+    }
+}

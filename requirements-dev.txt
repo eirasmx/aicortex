@@ -1,0 +1,6 @@
+# Development requirements
+-e .[dev,server]
+
+# Additional development tools
+pre-commit>=2.20.0
+commitizen>=2.40.0

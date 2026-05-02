@@ -1,0 +1,12 @@
+# Sphinx core
+sphinx>=7.2
+sphinx-book-theme>=1.1
+myst-parser>=3.0
+
+# Extensions
+sphinx-autodoc-typehints>=2.0
+sphinx-copybutton>=0.5
+sphinx-autobuild>=2024.0
+
+# Runtime — needed so autodoc can import aicortex
+ollama
