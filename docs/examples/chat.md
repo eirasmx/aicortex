@@ -91,45 +91,88 @@ response = chat(
 )
 ```
 
-## Multi-Turn Conversation
+## Multi-Turn Conversation with `Session`
 
-`chat()` is stateless — it sends a single prompt and returns a single response.
-To build a conversation, maintain history yourself and include it in each prompt:
+`chat()` is stateless by default. Use the `Session` class to maintain multi-turn
+memory automatically — no manual history management required:
+
+```python
+from aicortex import chat, Session
+
+session = Session()
+
+r1 = chat("My name is Alice and I'm learning Python.", session=session)
+print(r1)
+
+r2 = chat("What's my name?", session=session)
+print(r2)  # → "Your name is Alice."
+
+r3 = chat("What did I say I was learning?", session=session)
+print(r3)  # → "You said you were learning Python."
+```
+
+### Resuming a Session
+
+Sessions are identified by a string id. Save the id to resume a conversation later
+within the same process:
+
+```python
+from aicortex import chat, Session
+
+# Start a session and note the id
+session = Session()
+session_id = session.id
+chat("My favourite language is Rust.", session=session)
+
+# ... later in the same process ...
+resumed = Session(id=session_id)
+response = chat("What's my favourite language?", session=resumed)
+print(response)  # → "Your favourite language is Rust."
+```
+
+### Passing a Raw Id String
+
+```python
+response = chat("Remind me what we discussed.", session=session_id)
+```
+
+### Inspecting and Resetting History
+
+```python
+print(session.history)  # list of {"role": ..., "content": ...} dicts
+session.reset()         # clears history, keeps id registered
+session.delete()        # removes session entirely
+```
+
+> **💡 Token budget tip** — history grows with every turn. Check
+> `get_model_info(model)["context_length"]` and trim old turns when approaching the limit.
+
+## System Prompt
+
+Use `system=` to give the model a role or behavioural instruction for a single call.
+It is not stored in session history:
 
 ```python
 from aicortex import chat
 
-def build_prompt(history: list[dict], system: str = "") -> str:
-    """Build a prompt string from conversation history."""
-    parts = []
-    if system:
-        parts.append(f"System: {system}\n")
-    for turn in history:
-        parts.append(f"{turn['role'].capitalize()}: {turn['content']}")
-    parts.append("Assistant:")
-    return "\n".join(parts)
+response = chat(
+    "Explain what a linked list is.",
+    model="llama3.2:3b",
+    system="You are a patient teacher who uses simple real-world analogies.",
+)
+print(response)
 
-
-history = []
-system = "You are a helpful Python tutor. Keep answers concise."
-
-while True:
-    user_input = input("You: ").strip()
-    if not user_input:
-        break
-
-    history.append({"role": "user", "content": user_input})
-    prompt = build_prompt(history, system)
-
-    response = chat(prompt, model="llama3.2:3b", temperature=0.7)
-    history.append({"role": "assistant", "content": response})
-
-    print(f"Assistant: {response}\n")
+# Works alongside sessions — system applies to this call only
+from aicortex import Session
+session = Session()
+chat("My name is Bob.", session=session)
+response = chat(
+    "Who am I?",
+    session=session,
+    system="Answer like a pirate.",
+)
+print(response)  # → "Arrr, ye be Bob, matey!"
 ```
-
-> **💡 Token budget tip** — language models have a context window limit.
-> If your conversation grows long, trim the oldest turns from `history`
-> to stay within the model's `context_length` (visible in `get_model_info()`).
 
 ## Error Handling
 

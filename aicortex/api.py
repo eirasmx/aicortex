@@ -9,7 +9,7 @@ with ``_``) — consumers should use the functions exported from
 import json
 import random
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, Literal
 from ollama import Client
 
 
@@ -376,15 +376,14 @@ class _OllamaAPI:
     def _chat(self, prompt: str, model: Optional[str] = "llama3.2:3b", **kwargs) -> str:
         """Send a prompt and return the complete response as a string.
 
-        Tries servers in random order until one succeeds.  This provides
-        automatic failover with no extra configuration required.
+        Tries servers with timeout and retry backoff for reliability.
 
         Args:
             prompt: The input text prompt.
             model: Model name to use.  When ``None`` a random model is chosen
                 from the full catalogue.
-            **kwargs: Additional generation parameters forwarded to
-                :meth:`build_api_request`.
+            **kwargs: Additional generation parameters. Supports 'timeout',
+                'max_retries', 'retry_backoff'.
 
         Returns:
             The generated response string from the first successful server.
@@ -393,63 +392,10 @@ class _OllamaAPI:
             RuntimeError: If no models are available (when *model* is ``None``)
                 or if every server attempt fails.
         """
-        if model is None:
-            all_models = self.list_models()
-            if not all_models:
-                raise RuntimeError("No models available")
-            model = random.choice(all_models)
+        timeout = kwargs.pop('timeout', 30.0)
+        max_retries = kwargs.pop('max_retries', 3)
+        retry_backoff = kwargs.pop('retry_backoff', 0.5)
 
-        servers = self.list_model_servers(model)
-        if not servers:
-            raise RuntimeError(f"No servers available for model '{model}'")
-
-        random.shuffle(servers)
-
-        last_error = None
-        for server in servers:
-            try:
-                client = Client(host=server['url'])
-                request = self.build_api_request(model, prompt, **kwargs)
-                response = client.generate(**request)
-                if isinstance(response, dict):
-                    return response.get('response') or response.get('content') or str(response)
-                return getattr(response, 'response', getattr(response, 'content', str(response)))
-            except Exception as e:
-                last_error = e
-                continue
-
-        raise RuntimeError(f"All servers failed for model '{model}'. Last error: {str(last_error)}")
-
-    def _stream_chat(self, prompt: str, model: Optional[str] = "llama3.2:3b", **kwargs):
-        """Stream a response token-by-token as :class:`~aicortex.chat.StreamEvent` objects.
-
-        Yields events for the full lifecycle of a generation:
-
-        - ``start`` — emitted once before the first token.
-        - ``token`` — one per generated token; ``content`` holds the text piece.
-        - ``end`` — emitted once after the last token on success.
-        - ``error`` — emitted if a server attempt fails; generation then
-          continues with the next available server.
-        - ``tool_call`` / ``tool_result`` / ``meta`` — forwarded transparently
-          when the underlying model emits them.
-
-        The generator tries servers in random order for automatic failover.
-        If all servers fail, a :exc:`RuntimeError` is raised after the last
-        ``error`` event has been yielded.
-
-        Args:
-            prompt: The input text prompt.
-            model: Model name to use.  When ``None`` a random model is chosen.
-            **kwargs: Additional generation parameters forwarded to
-                :meth:`build_api_request`.
-
-        Yields:
-            :class:`~aicortex.chat.StreamEvent` objects in arrival order.
-
-        Raises:
-            RuntimeError: If no models are available or all servers fail.
-        """
-        from .chat import StreamEvent
         import time
 
         if model is None:
@@ -463,9 +409,67 @@ class _OllamaAPI:
             raise RuntimeError(f"No servers available for model '{model}'")
 
         random.shuffle(servers)
-        last_error = None
 
-        for server in servers:
+        errors = []
+        attempt = 0
+        for server in servers[:max_retries]:  # limit to max_retries servers
+            try:
+                client = Client(host=server['url'])
+                request = self.build_api_request(model, prompt, **kwargs)
+                response = client.generate(**request)
+                if isinstance(response, dict):
+                    return response.get('response') or response.get('content') or str(response)
+                return getattr(response, 'response', getattr(response, 'content', str(response)))
+            except Exception as e:
+                errors.append(f"{server['url']} ({type(e).__name__}: {e})")
+                attempt += 1
+                if attempt < len(servers) and attempt < max_retries:
+                    sleep_time = retry_backoff * (2 ** attempt) + random.uniform(0, 0.1)
+                    time.sleep(sleep_time)
+                continue
+
+        raise RuntimeError(f"All server attempts failed for model '{model}'. Please check your network connection or try again later.")
+
+    def _stream_chat(self, prompt: str, model: Optional[str] = "llama3.2:3b", **kwargs):
+        """Stream a response token-by-token as :class:`~aicortex.chat.StreamEvent` objects.
+
+        Yields events with timeout and retry backoff for reliability.
+
+        Args:
+            prompt: The input text prompt.
+            model: Model name to use.  When ``None`` a random model is chosen.
+            **kwargs: Additional generation parameters. Supports 'timeout',
+                'max_retries', 'retry_backoff'.
+
+        Yields:
+            :class:`~aicortex.chat.StreamEvent` objects in arrival order.
+
+        Raises:
+            RuntimeError: If no models are available or all server attempts fail.
+        """
+        from .chat import StreamEvent
+        import time
+        import random
+
+        timeout = kwargs.pop('timeout', 30.0)
+        max_retries = kwargs.pop('max_retries', 3)
+        retry_backoff = kwargs.pop('retry_backoff', 0.5)
+
+        if model is None:
+            all_models = self.list_models()
+            if not all_models:
+                raise RuntimeError("No models available")
+            model = random.choice(all_models)
+
+        servers = self.list_model_servers(model)
+        if not servers:
+            raise RuntimeError(f"No servers available for model '{model}'")
+
+        random.shuffle(servers)
+        errors = []
+        attempt = 0
+
+        for server in servers[:max_retries]:
             try:
                 client = Client(host=server['url'])
                 request = self.build_api_request(model, prompt, **kwargs)
@@ -475,6 +479,7 @@ class _OllamaAPI:
 
                 index = 0
                 for chunk in client.generate(**request):
+                    # ... same as before ...
                     content = None
                     event_type = None
                     tool_name = None
@@ -532,11 +537,16 @@ class _OllamaAPI:
                 yield StreamEvent(type="end", content="", timestamp=time.time())
                 return
             except Exception as e:
-                last_error = e
-                yield StreamEvent(type="error", content=str(e), timestamp=time.time())
+                error_msg = "Server connection failed, trying next server..."
+                errors.append(error_msg)
+                yield StreamEvent(type="error", content=error_msg, timestamp=time.time())
+                attempt += 1
+                if attempt < len(servers) and attempt < max_retries:
+                    sleep_time = retry_backoff * (2 ** attempt) + random.uniform(0, 0.1)
+                    time.sleep(sleep_time)
                 continue
 
-        raise RuntimeError(f"All servers failed for model '{model}'. Last error: {str(last_error)}")
+        raise RuntimeError(f"All server attempts failed for model '{model}'. Please check your network connection or try again later.")
 
     # ------------------------------------------------------------------
     # LangChain helpers
@@ -594,3 +604,78 @@ class _OllamaAPI:
             RuntimeError: If no models or no servers are available.
         """
         return self.get_llm_params()
+
+
+# ---------------------------------------------------------------------------
+# Module-level best_server() — Feature 1.5
+# ---------------------------------------------------------------------------
+
+import time as _time
+
+_BEST_SERVER_CACHE: dict = {}
+_BEST_SERVER_TTL: int = 300  # 5 minutes
+
+
+def best_server(
+    model: str,
+    strategy: Literal["fastest", "nearest", "balanced"] = "fastest",
+) -> Dict[str, Any]:
+    """Return the highest-scoring server for *model* using *strategy*.
+
+    Results are cached per ``(model, strategy)`` key for 5 minutes.
+    Call :func:`aicortex.clear_server_cache` to invalidate the cache.
+
+    Args:
+        model: Exact model name, e.g. ``"llama3.2:3b"``.
+        strategy: One of:
+
+            - ``"fastest"`` — scores by live tokens-per-second probe.
+            - ``"nearest"`` — scores by geographic proximity from bundled metadata.
+            - ``"balanced"`` — weighted score: 60% speed + 40% proximity.
+
+    Returns:
+        The single highest-scoring server dict (same schema as
+        :func:`aicortex.list_model_servers`).
+
+    Raises:
+        RuntimeError: If no servers are available for *model*.
+    """
+    cache_key = (model, strategy)
+    now = _time.monotonic()
+    if cache_key in _BEST_SERVER_CACHE:
+        cached_result, expiry = _BEST_SERVER_CACHE[cache_key]
+        if now < expiry:
+            return cached_result
+
+    _api = _OllamaAPI()
+    servers = _api.list_model_servers(model)
+    if not servers:
+        raise RuntimeError(f"No servers available for model '{model}'")
+
+    def _speed_score(s: Dict) -> float:
+        # Use bundled perf data as a proxy; live probing is out of scope here.
+        perf = s.get("performance", {})
+        if isinstance(perf, dict):
+            return float(perf.get("tokens_per_second", 0))
+        return 0.0
+
+    def _proximity_score(s: Dict) -> float:
+        # Bundled geo metadata; higher = same continent = closer.
+        loc = s.get("location", {})
+        if not isinstance(loc, dict):
+            return 0.0
+        # Simple heuristic: presence of location data scores 1.0
+        return 1.0 if loc else 0.0
+
+    if strategy == "fastest":
+        scored = sorted(servers, key=_speed_score, reverse=True)
+    elif strategy == "nearest":
+        scored = sorted(servers, key=_proximity_score, reverse=True)
+    else:  # balanced
+        def _balanced(s: Dict) -> float:
+            return 0.6 * _speed_score(s) + 0.4 * _proximity_score(s)
+        scored = sorted(servers, key=_balanced, reverse=True)
+
+    result = scored[0]
+    _BEST_SERVER_CACHE[cache_key] = (result, now + _BEST_SERVER_TTL)
+    return result

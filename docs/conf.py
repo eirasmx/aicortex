@@ -8,7 +8,7 @@
 project = "AI Cortex"
 copyright = "2025, Erasmus A. Junior — GNU LGPLv3"
 author = "Erasmus A. Junior"
-release = "1.0.2"
+release = "1.0.3"
 version = "1.0"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,9 +92,6 @@ html_theme_options = {
     "home_page_in_toc": True,
     "show_navbar_depth": 2,
     "show_toc_level": 2,
-    "announcement": (
-        "🚀 AI Cortex 1.0 is here — zero API keys, hundreds of models, one clean interface."
-    ),
     "logo": {
         "text": (
             '<div id="sidebar_mini">'

@@ -396,7 +396,7 @@ Minimal code to reproduce the issue:
 **Environment**
 - OS: macOS 14.3 / Ubuntu 22.04 / Windows 11
 - Python: 3.11.2
-- AI Cortex: 1.0.2
+- AI Cortex: 1.0.3
 - Ollama: 0.3.1
 
 **Full traceback**

@@ -7,7 +7,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="aicortex-core",
-    version="1.0.2",
+    version="1.0.3",
     author="Erasmus A. Junior",
     author_email="eirasmx@duck.com",
     maintainer="Erasmus A. Junior",

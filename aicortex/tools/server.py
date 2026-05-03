@@ -257,7 +257,7 @@ def create_app(config: Config) -> Any:
     app = FastAPI(
         title="AI Cortex OpenAI-Compatible Proxy",
         description=f"Default model: {config.DEFAULT_MODEL}",
-        version="1.0.2",
+        version="1.0.3",
     )
 
     @app.get("/")
@@ -265,7 +265,7 @@ def create_app(config: Config) -> Any:
         """Return service info and a directory of available endpoints."""
         return {
             "service": "AI Cortex OpenAI-Compatible Proxy",
-            "version": "1.0.2",
+            "version": "1.0.3",
             "default_model": config.DEFAULT_MODEL,
             "endpoints": {
                 "models": "/models",

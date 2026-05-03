@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from typing import Any, Iterator, Literal, Optional
+from typing import Any, AsyncIterator, Iterator, List, Literal, Optional, Union
+
+from .session import Session  # type: ignore[attr-defined]
 
 EventType = Literal[
     'start',
@@ -30,17 +32,9 @@ class StreamEvent:
 class Stream:
     """A stream container for ordered `StreamEvent` objects."""
 
-    events: list[StreamEvent]
+    events: List[StreamEvent]
 
-    def __iter__(self) -> Iterator[StreamEvent]:
-        """Iterate over the stream events in order."""
-        ...
-
-    def add(self, event: StreamEvent) -> None:
-        """Append a `StreamEvent` to the stream buffer."""
-        ...
-
-    def text(self) -> str:
-        """Reconstruct the streamed text from token events only."""
-        ...
-
+    def __iter__(self) -> Iterator[StreamEvent]: ...
+    def __aiter__(self) -> AsyncIterator[StreamEvent]: ...
+    def add(self, event: StreamEvent) -> None: ...
+    def text(self) -> str: ...

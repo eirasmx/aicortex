@@ -430,8 +430,8 @@ twine check dist/*
 ```
 
 This produces:
-- `dist/aicortex_core-1.0.2.tar.gz` — source distribution
-- `dist/aicortex_core-1.0.2-py3-none-any.whl` — universal wheel
+- `dist/aicortex_core-1.0.3.tar.gz` — source distribution
+- `dist/aicortex_core-1.0.3-py3-none-any.whl` — universal wheel
 
 ### What's in the Wheel
 

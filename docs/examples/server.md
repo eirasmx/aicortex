@@ -56,7 +56,7 @@ curl http://localhost:8000/health
 ```
 
 ```json
-{"status": "ok", "version": "1.0.2"}
+{"status": "ok", "version": "1.0.3"}
 ```
 
 ### List Models

@@ -12,6 +12,44 @@ AI Cortex adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.3] — 2026-05-03
+
+### ✨ Added
+
+#### Session — Multi-turn Memory (`1.1`)
+- `Session` class in `aicortex/session.py` with auto-generated or user-supplied session id
+- `Session.id` — read-only property exposing the session identity string
+- `Session.history` — read-only property returning a copy of the stored turn list
+- `Session.reset()` — clears history while keeping the session id registered
+- `Session.delete()` — removes the session from the in-process store entirely
+- `session: Session | str | None = None` param on `chat()` — enables multi-turn conversation accumulation
+- `Session` exported from `aicortex.__init__` and added to type stubs
+
+#### Async Support (`1.2`)
+- `chat()` is now dual-mode: detects a running event loop and returns a coroutine automatically
+- Internal `_sync_chat()` and `_async_chat()` dispatch functions (private, not exported)
+- `stream=True` in async mode yields `StreamEvent` objects via `async for`
+- Session store writes are safe in both sync and async paths — shared `_SESSION_STORE` dict
+
+#### Structured Output / JSON Mode (`1.3`)
+- `response_format: Literal["text", "json"] = "text"` param on `chat()`
+- `schema: dict | None = None` param on `chat()` — validates parsed JSON against a JSON Schema via `jsonschema`
+- Returns `dict` instead of `str` when `response_format="json"` and `stream=False`
+- Raises `ValueError` if `response_format="json"` and `stream=True` are combined
+
+#### `system` Param on `chat()` (`1.4`)
+- `system: str | None = None` as an explicit keyword argument on `chat()`; forwarded to `build_api_request()`
+- Raises `ValueError` if both `system` and `persona` are passed simultaneously
+
+#### Smart Routing (`1.5`)
+- `routing: Literal["random", "fastest", "nearest"] = "random"` param on `chat()`
+- `best_server(model, strategy)` top-level function — returns the highest-scoring server for a model
+- Three strategies: `"fastest"` (live TPS probe), `"nearest"` (bundled geo metadata), `"balanced"` (60/40 weighted)
+- `best_server()` results cached per `(model, strategy)` key with a 5-minute in-process TTL
+- `best_server` exported from `aicortex.__init__` and added to type stubs
+
+---
+
 ## [1.0.2] — 2026-05-02
 
 ### 🐛 Fixed
@@ -125,6 +163,7 @@ Each release section uses these headings:
 
 ---
 
+[1.0.3]: https://github.com/eirasmx/aicortex/releases/tag/v1.0.3
 [1.0.2]: https://github.com/eirasmx/aicortex/releases/tag/v1.0.2
 [1.0.1]: https://github.com/eirasmx/aicortex/releases/tag/v1.0.1
 [1.0.0]: https://github.com/eirasmx/aicortex/releases/tag/v1.0.0

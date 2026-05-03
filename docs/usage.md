@@ -9,6 +9,12 @@ error handling, and the model/server discovery API.
 # Core chat function — this is all most users need
 from aicortex import chat
 
+# Multi-turn sessions
+from aicortex import Session
+
+# Smart server routing
+from aicortex import best_server, clear_server_cache
+
 # Model discovery
 from aicortex import families, models, get_model_info
 
@@ -39,7 +45,12 @@ def chat(
     max_tokens: int | None = None,
     top_p: float = 1.0,
     stop: list[str] | None = None,
-) -> str | Stream:
+    session: Session | str | None = None,
+    system: str | None = None,
+    response_format: Literal["text", "json"] = "text",
+    schema: dict | None = None,
+    routing: Literal["random", "fastest", "nearest"] = "random",
+) -> str | dict | Stream:
 ```
 
 ### Parameters
@@ -53,11 +64,17 @@ def chat(
 | `max_tokens` | `int \| None` | `None` | Maximum tokens to generate. `None` uses server default |
 | `top_p` | `float` | `1.0` | Nucleus sampling cutoff. Lower values restrict vocabulary |
 | `stop` | `list[str] \| None` | `None` | Stop generating when any of these strings are produced |
+| `session` | `Session \| str \| None` | `None` | Enable multi-turn memory. Pass a `Session` object or raw session id string |
+| `system` | `str \| None` | `None` | System prompt forwarded to the model for this call only |
+| `response_format` | `Literal["text", "json"]` | `"text"` | Return a parsed `dict` instead of `str` when `"json"` |
+| `schema` | `dict \| None` | `None` | JSON Schema to validate the parsed response against (requires `jsonschema`) |
+| `routing` | `Literal["random", "fastest", "nearest"]` | `"random"` | Server selection strategy for this call |
 
 ### Return Values
 
-- **`stream=False`** → returns `str` — the full generated response text
-- **`stream=True`** → returns `Stream` — an iterable of `StreamEvent` objects
+- **`stream=False`, `response_format="text"`** → returns `str` — the full generated response text
+- **`stream=False`, `response_format="json"`** → returns `dict` — the parsed JSON response
+- **`stream=True`** → returns `Stream` — an iterable of `StreamEvent` objects (sync or async)
 
 ## Usage Patterns
 
@@ -154,6 +171,221 @@ for event in stream:
 
 print(f"\n\n— {len(full_text)} characters generated —")
 ```
+
+## Multi-Turn Sessions
+
+`chat()` is stateless by default — every call is a cold start. The `Session` class
+adds multi-turn memory backed by an in-process store, with no external dependencies.
+
+### Creating a Session
+
+```python
+from aicortex import chat, Session
+
+# Auto-generate a session id
+session = Session()
+print(session.id)  # e.g. "a3f1c2d4"
+
+# Resume an existing session by id
+session = Session(id="a3f1c2d4")
+
+# Session with unknown id raises immediately
+session = Session(id="unknown")  # KeyError: No session with id 'unknown' found...
+```
+
+### Chatting with a Session
+
+Pass the `Session` object (or its raw id string) to `chat()`. History is appended
+automatically after every successful response:
+
+```python
+from aicortex import chat, Session
+
+session = Session()
+
+r1 = chat("My name is Alice.", session=session)
+r2 = chat("What's my name?", session=session)
+print(r2)  # → "Your name is Alice."
+
+# Raw id string works too
+r3 = chat("And what did I say first?", session=session.id)
+```
+
+### Inspecting and Managing History
+
+```python
+# Read-only view of accumulated turns
+print(session.history)
+# [
+#   {"role": "user",      "content": "My name is Alice."},
+#   {"role": "assistant", "content": "Nice to meet you, Alice!"},
+#   ...
+# ]
+
+# Clear history — keeps the session id registered
+session.reset()
+
+# Remove the session entirely — instance is invalid after this
+session.delete()
+```
+
+> **Note:** History is in-process only and is lost on process restart. For persistence,
+> serialize `session.history` to disk or a database between runs and replay it manually.
+
+---
+
+## Async Support
+
+`chat()` detects whether it is running inside an event loop and switches mode automatically.
+No configuration required — the same function works in both sync and async contexts.
+
+### Using `chat()` in FastAPI
+
+```python
+from fastapi import FastAPI
+from aicortex import chat, Session
+
+app = FastAPI()
+
+@app.post("/ask")
+async def ask(prompt: str, session_id: str | None = None):
+    session = Session(id=session_id) if session_id else Session()
+    # await is not needed — chat() returns a coroutine automatically
+    # when called from inside a running event loop
+    response = await chat(prompt, model="llama3.2:3b", session=session)
+    return {"response": response, "session_id": session.id}
+```
+
+### Async Streaming
+
+```python
+import asyncio
+from aicortex import chat
+
+async def stream_response():
+    stream = await chat("Tell me a short story.", model="mistral:7b", stream=True)
+    async for event in stream:
+        if event.type == "token":
+            print(event.content, end="", flush=True)
+
+asyncio.run(stream_response())
+```
+
+---
+
+## Structured Output (JSON Mode)
+
+Use `response_format="json"` to get a parsed `dict` back instead of a raw string.
+AI Cortex injects a JSON instruction into the system prompt and validates the response.
+
+### Basic JSON Response
+
+```python
+from aicortex import chat
+
+result = chat(
+    "Return the capital and population of France as JSON.",
+    model="llama3.2:3b",
+    response_format="json",
+)
+print(result)        # {"capital": "Paris", "population": 68000000}
+print(type(result))  # <class 'dict'>
+```
+
+### Schema Validation
+
+Pass a JSON Schema dict to `schema=` to validate the response structure.
+Raises `jsonschema.ValidationError` on mismatch:
+
+```python
+from aicortex import chat
+
+schema = {
+    "type": "object",
+    "properties": {
+        "capital":    {"type": "string"},
+        "population": {"type": "integer"},
+    },
+    "required": ["capital", "population"],
+}
+
+result = chat(
+    "Return the capital and population of Germany as JSON.",
+    model="llama3.2:3b",
+    response_format="json",
+    schema=schema,
+)
+print(result["capital"])     # "Berlin"
+print(result["population"])  # 84000000
+```
+
+> **Note:** `schema` requires the `jsonschema` package (`pip install jsonschema`).
+> Combining `response_format="json"` with `stream=True` raises `ValueError` immediately.
+
+---
+
+## System Prompt
+
+Use the `system=` parameter to pass a system prompt for the current call.
+It is forwarded directly to the model and is never stored in session history.
+
+```python
+from aicortex import chat
+
+response = chat(
+    "Explain recursion.",
+    model="llama3.2:3b",
+    system="You are a patient teacher who explains concepts using simple analogies.",
+)
+```
+
+> **Note:** Passing both `system=` and `persona=` raises `ValueError`. Use one or the other.
+
+---
+
+## Smart Routing
+
+Control which server handles a request using the `routing=` parameter.
+
+| Strategy | Behaviour |
+|---|---|
+| `"random"` *(default)* | Shuffles the server pool; proven-fast servers float to the top over time |
+| `"fastest"` | Picks the server with the highest live tokens-per-second |
+| `"nearest"` | Picks the geographically closest server using bundled metadata |
+
+```python
+from aicortex import chat
+
+# Always use the fastest available server
+response = chat("Summarise this document.", model="mistral:7b", routing="fastest")
+
+# Prefer a low-latency nearby server
+response = chat("Quick reply please.", model="llama3.2:3b", routing="nearest")
+```
+
+### `best_server()` — Query the Winning Server Directly
+
+```python
+from aicortex import best_server
+
+server = best_server("llama3.2:3b", strategy="fastest")
+print(server["url"])               # http://1.2.3.4:11434
+print(server["tokens_per_second"]) # 94.3
+
+server = best_server("mistral:7b", strategy="nearest")
+print(server["location"]["country"])  # "DE"
+```
+
+Results are cached per `(model, strategy)` key for 5 minutes. Call
+`clear_server_cache()` to flush the cache manually:
+
+```python
+from aicortex import clear_server_cache
+
+clear_server_cache()  # flushes bad-server, good-server, and best_server caches
+```
+
+---
 
 ## Model Discovery API
 

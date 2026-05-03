@@ -1,0 +1,19 @@
+from typing import Dict, List, Optional
+
+_SESSION_STORE: Dict[str, List[Dict[str, str]]]
+
+
+class Session:
+    """Multi-turn conversation identity token backed by an in-process store."""
+
+    def __init__(self, id: Optional[str] = None) -> None: ...
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def history(self) -> List[Dict[str, str]]: ...
+
+    def reset(self) -> None: ...
+    def delete(self) -> None: ...
+    def __repr__(self) -> str: ...

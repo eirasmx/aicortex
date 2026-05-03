@@ -58,7 +58,7 @@ Returns service metadata and a map of available endpoints.
 ```json
 {
   "service": "AI Cortex OpenAI-Compatible Proxy",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "default_model": "gpt-oss:20b",
   "endpoints": {
     "models":           "/models",

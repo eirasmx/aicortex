@@ -91,7 +91,7 @@ Run this in Python to confirm everything is working:
 import aicortex
 
 # Check the version
-print(aicortex.__version__)   # e.g. 1.0.2
+print(aicortex.__version__)   # e.g. 1.0.3
 
 # List available model families
 print(aicortex.families())    # ['llama', 'mistral', 'gemma', 'deepseek', 'qwen']

@@ -34,8 +34,10 @@ Public API summary:
 
 from typing import Any, Dict, List, Optional
 from . import tools
-from .api import _OllamaAPI
+from .api import _OllamaAPI, best_server
+from .cache import clear_server_cache
 from .chat import Stream, StreamEvent, chat
+from .session import Session
 
 _client = _OllamaAPI()
 
@@ -43,6 +45,9 @@ __all__ = [
     'chat',
     'Stream',
     'StreamEvent',
+    'Session',
+    'best_server',
+    'clear_server_cache',
     'families',
     'models',
     'get_model_info',
@@ -54,7 +59,7 @@ __all__ = [
     'tools',
 ]
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 
 def families() -> List[str]:

@@ -8,27 +8,52 @@ This module exposes three public objects:
 - :class:`StreamEvent` — a typed dataclass representing a single event in the
   token stream.
 
+New in 1.0.3:
+
+- **Session support** — pass ``session=`` for multi-turn memory.
+- **Async support** — ``chat()`` detects a running event loop and returns a
+  coroutine automatically; no separate function needed.
+- **JSON mode** — ``response_format="json"`` returns a parsed ``dict``.
+- **System prompt** — ``system=`` forwarded directly to the model.
+- **Smart routing** — ``routing="fastest"|"nearest"`` selects the best server.
+
 Typical usage::
 
-    from aicortex import chat
+    from aicortex import chat, Session
 
-    # ── Non-streaming (returns a plain string) ──────────────────────────────
+    # Non-streaming
     response = chat("What is the speed of light?")
     print(response)
 
-    # ── Streaming (returns a Stream object) ─────────────────────────────────
+    # Streaming
     stream = chat("Write a haiku about the sea.", stream=True)
     for event in stream:
         if event.type == "token":
             print(event.content, end="", flush=True)
 
-    # Full text from a completed stream
-    print(stream.text())
+    # Multi-turn session
+    session = Session()
+    chat("My name is Alice.", session=session)
+    print(chat("What is my name?", session=session))
+
+    # Async (inside an event loop)
+    response = await chat("Hello!", model="llama3.2:3b")
+
+    # JSON mode
+    data = chat("Return today's date as JSON.", response_format="json")
+    print(data["date"])
 """
 
+from __future__ import annotations
+
+import asyncio
+import json
+import time
 from dataclasses import dataclass
-from typing import Iterator, Literal, Any, Optional
+from typing import Any, Dict, Iterator, List, Literal, Optional, Union
+
 from .api import _OllamaAPI
+from .session import Session, _SESSION_STORE
 
 _client = _OllamaAPI()
 
@@ -46,132 +71,51 @@ EventType = Literal[
 
 @dataclass
 class StreamEvent:
-    """A single event emitted during a streaming generation.
-
-    Every event has a ``type`` that identifies its role in the stream
-    lifecycle.  Most fields are optional and only populated for the event
-    types that need them.
-
-    Lifecycle events (always emitted):
-
-    - ``"start"`` — fired once before any tokens arrive.
-    - ``"token"`` — fired for each generated token piece; ``content``
-      holds the text fragment, ``index`` is its 0-based position.
-    - ``"end"`` — fired once after the last token when generation succeeds.
-    - ``"error"`` — fired when a server attempt fails; ``content`` contains
-      the error message.
-
-    Tool-calling events (emitted by models that support function calls):
-
-    - ``"tool_call"`` — the model has decided to invoke a tool; populated
-      fields are ``tool_name`` and ``tool_args``.
-    - ``"tool_result"`` — the result of a tool call; ``tool_result`` holds
-      the payload.
-
-    Metadata events:
-
-    - ``"meta"`` — optional diagnostic or provider-specific payload stored
-      in ``meta``.
-
-    Attributes:
-        type: One of the ``EventType`` literals above.
-        content: Text content for ``token`` and ``error`` events.
-        index: 0-based token position within the stream (``token`` events only).
-        tool_name: Name of the tool being invoked (``tool_call`` events only).
-        tool_args: Arguments dict for the tool call (``tool_call`` events only).
-        tool_result: Return value from a completed tool call
-            (``tool_result`` events only).
-        meta: Arbitrary key/value metadata from the provider
-            (``meta`` events only).
-        timestamp: Unix timestamp (seconds) recorded when the event was
-            created; useful for latency measurements.
-
-    Example::
-
-        for event in chat("Hello!", stream=True):
-            if event.type == "token":
-                print(event.content, end="", flush=True)
-            elif event.type == "error":
-                print(f"\\nServer error: {event.content}")
-    """
+    """A single event emitted during a streaming generation."""
 
     type: EventType
     content: Optional[str] = None
     index: Optional[int] = None
-
-    # Tool-calling fields
     tool_name: Optional[str] = None
     tool_args: Optional[dict] = None
     tool_result: Any = None
-
-    # Metadata / diagnostics
     meta: Optional[dict] = None
-
-    # Timing / tracing
     timestamp: Optional[float] = None
 
 
+class _AsyncIteratorWrapper:
+    """Wraps a sync iterator so it can be used with ``async for``."""
+
+    def __init__(self, it: Iterator):
+        self._it = it
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._it)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
 class Stream:
-    """An ordered collection of :class:`StreamEvent` objects from a single generation.
-
-    :class:`Stream` is returned by :func:`chat` when ``stream=True``.  The
-    stream is **eagerly collected** — all events are buffered in memory before
-    the object is returned, so iteration is always safe to repeat.
-
-    Attributes:
-        events: The underlying list of :class:`StreamEvent` objects in
-            arrival order.
-
-    Example::
-
-        stream = chat("Summarise the Iliad in three sentences.", stream=True)
-
-        # Iterate events
-        for event in stream:
-            if event.type == "token":
-                print(event.content, end="", flush=True)
-
-        # Or just get the full text in one go
-        print(stream.text())
-    """
+    """An ordered collection of :class:`StreamEvent` objects from a single generation."""
 
     def __init__(self):
-        """Initialise an empty stream container."""
-        self.events: list[StreamEvent] = []
+        self.events: List[StreamEvent] = []
 
     def add(self, event: StreamEvent):
-        """Append a single :class:`StreamEvent` to the internal buffer.
-
-        This method is called internally by :func:`chat` and should not
-        normally be needed by consumers.
-
-        Args:
-            event: The event to append.
-        """
         self.events.append(event)
 
-    def __iter__(self):
-        """Iterate over all buffered events in arrival order.
-
-        Returns:
-            An iterator over :class:`StreamEvent` objects.
-        """
+    def __iter__(self) -> Iterator[StreamEvent]:
         return iter(self.events)
 
+    def __aiter__(self):
+        return _AsyncIteratorWrapper(iter(self.events))
+
     def text(self) -> str:
-        """Concatenate all ``token`` event contents into a single string.
-
-        Ignores ``start``, ``end``, ``error``, and other non-token events,
-        so the result is the clean generated text with no artefacts.
-
-        Returns:
-            The complete generated text as a single string.
-
-        Example::
-
-            stream = chat("What is 2 + 2?", stream=True)
-            print(stream.text())  # "4"
-        """
+        """Return all token content concatenated into a single string."""
         return "".join(
             e.content or ""
             for e in self.events
@@ -179,84 +123,216 @@ class Stream:
         )
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_session_id(session: Union[Session, str, None]) -> Optional[str]:
+    if session is None:
+        return None
+    sid = session.id if isinstance(session, Session) else session
+    if sid not in _SESSION_STORE:
+        raise KeyError(
+            f"No session with id '{sid}' found. "
+            f"Create one with Session(id='{sid}')"
+        )
+    return sid
+
+
+def _build_kwargs(
+    temperature: float,
+    top_p: float,
+    max_tokens: Optional[int],
+    stop: Optional[List[str]],
+    system: Optional[str],
+    session_id: Optional[str],
+) -> Dict[str, Any]:
+    kwargs: Dict[str, Any] = {"temperature": temperature, "top_p": top_p}
+    if max_tokens is not None:
+        kwargs["num_predict"] = max_tokens
+    if stop is not None:
+        kwargs["stop"] = stop
+    if system is not None:
+        kwargs["system"] = system
+    if session_id is not None:
+        kwargs["messages"] = list(_SESSION_STORE[session_id])
+    return kwargs
+
+
+def _pick_server_url(model: str, routing: str) -> Optional[str]:
+    if routing == "random":
+        return None
+    try:
+        from .api import best_server as _best_server
+        server = _best_server(model, strategy=routing)
+        return server.get("url")
+    except Exception:
+        return None
+
+
+def _sync_chat(
+    prompt: str,
+    model: str,
+    stream: bool,
+    session_id: Optional[str],
+    response_format: str,
+    routing: str,
+    timeout: float,
+    max_retries: int,
+    retry_backoff: float,
+    kwargs: Dict[str, Any],
+) -> Union[str, dict, Stream]:
+    preferred_url = _pick_server_url(model, routing)
+    if preferred_url:
+        kwargs["_preferred_server_url"] = preferred_url
+
+    if stream:
+        stream_obj = Stream()
+        for event in _client._stream_chat(prompt, model, timeout=timeout, max_retries=max_retries, retry_backoff=retry_backoff, **kwargs):
+            stream_obj.add(event)
+        if session_id is not None:
+            text = stream_obj.text()
+            if text:
+                _SESSION_STORE[session_id].append({"role": "user", "content": prompt})
+                _SESSION_STORE[session_id].append({"role": "assistant", "content": text})
+        return stream_obj
+
+    raw = _client._chat(prompt, model, timeout=timeout, max_retries=max_retries, retry_backoff=retry_backoff, **kwargs)
+
+    if session_id is not None:
+        _SESSION_STORE[session_id].append({"role": "user", "content": prompt})
+        _SESSION_STORE[session_id].append({"role": "assistant", "content": raw})
+
+    if response_format == "json":
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            raise ValueError(f"Model returned non-JSON: {raw}")
+
+    return raw
+
+
+async def _async_chat(
+    prompt: str,
+    model: str,
+    stream: bool,
+    session_id: Optional[str],
+    response_format: str,
+    routing: str,
+    timeout: float,
+    max_retries: int,
+    retry_backoff: float,
+    kwargs: Dict[str, Any],
+) -> Union[str, dict, Stream]:
+    import functools
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        functools.partial(
+            _sync_chat,
+            prompt, model, stream, session_id, response_format, routing, timeout, max_retries, retry_backoff, kwargs,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def chat(
     prompt: str,
     *,
     model: str = "gpt-oss:20b",
     stream: bool = False,
     temperature: float = 0.7,
-    max_tokens: int | None = None,
+    max_tokens: Optional[int] = None,
     top_p: float = 1.0,
-    stop: list[str] | None = None,
-) -> str | Stream:
+    stop: Optional[List[str]] = None,
+    session: Union[Session, str, None] = None,
+    system: Optional[str] = None,
+    response_format: Literal["text", "json"] = "text",
+    schema: Optional[dict] = None,
+    routing: Literal["random", "fastest", "nearest"] = "random",
+    timeout: float = 30.0,
+    max_retries: int = 3,
+    retry_backoff: float = 0.5,
+    persona: Optional[str] = None,
+) -> Union[str, dict, Stream]:
     """Send a prompt to an Ollama model and return the response.
-
-    This is AI Cortex's primary entry point.  It handles server selection,
-    automatic failover, and both blocking and streaming generation modes.
 
     Args:
         prompt: The input text to send to the model.
-        model: Ollama model name to use.  Defaults to ``"gpt-oss:20b"``.
-            Use :func:`aicortex.models` to browse available options.
-        stream: When ``True``, collect token events and return a
-            :class:`Stream` object.  When ``False`` (default), block until
-            generation is complete and return the response as a plain string.
-        temperature: Sampling temperature controlling output randomness.
-            ``0.0`` is fully deterministic (greedy); higher values (up to
-            ``~2.0``) increase diversity.  Defaults to ``0.7``.
-        max_tokens: Maximum number of tokens to generate.  When ``None``
-            (default) the server-side default is used.
-        top_p: Nucleus sampling threshold.  Only tokens whose cumulative
-            probability reaches *top_p* are considered.  Defaults to ``1.0``
-            (disabled).
-        stop: Optional list of strings that halt generation when encountered
-            in the output.
+        model: Ollama model name.  Defaults to ``"gpt-oss:20b"``.
+        stream: Return a :class:`Stream` when ``True``; plain ``str`` when ``False``.
+        temperature: Sampling temperature (0.0 = deterministic).  Default 0.7.
+        max_tokens: Max tokens to generate.  ``None`` uses server default.
+        top_p: Nucleus sampling threshold.  Default 1.0 (disabled).
+        stop: Strings that halt generation when encountered.
+        session: :class:`Session` object or raw id string for multi-turn memory.
+        system: System prompt for this call only (not stored in session history).
+        response_format: ``"text"`` (default) or ``"json"`` (returns parsed dict).
+        schema: JSON Schema dict to validate the parsed response (requires jsonschema).
+        routing: Server selection — ``"random"`` (default), ``"fastest"``, ``"nearest"``.
+        timeout: Seconds before abandoning a single server attempt. Default 30.0.
+        max_retries: Max total server attempts (including first). Default 3.
+        retry_backoff: Base seconds for exponential backoff. Default 0.5.
+        persona: Reserved for Section 8.  Conflicts with ``system``.
 
     Returns:
-        - A plain ``str`` when ``stream=False``.
-        - A :class:`Stream` object when ``stream=True``.  Iterate it to
-          access individual :class:`StreamEvent` objects, or call
-          :meth:`Stream.text` for the full concatenated text.
+        ``str``, ``dict``, or :class:`Stream` depending on arguments.
 
     Raises:
-        RuntimeError: If no servers are available for the requested model,
-            or if all server attempts fail.
-
-    Examples::
-
-        # Non-streaming — simplest form
-        answer = chat("What is the boiling point of water?")
-        print(answer)
-
-        # Custom model and deterministic output
-        code = chat(
-            "Write a Python function to reverse a string.",
-            model="llama3.2:3b",
-            temperature=0.0,
-            max_tokens=200,
-        )
-        print(code)
-
-        # Streaming — print tokens as they arrive
-        stream = chat("Tell me a short bedtime story.", stream=True)
-        for event in stream:
-            if event.type == "token":
-                print(event.content, end="", flush=True)
-        print()  # newline after stream ends
+        ValueError: On invalid argument combinations.
+        KeyError: If session id is not found in the store.
+        RuntimeError: If all server attempts fail.
     """
-    kwargs: dict[str, Any] = {
-        'temperature': temperature,
-        'top_p': top_p,
-    }
-    if max_tokens is not None:
-        kwargs['num_predict'] = max_tokens
-    if stop is not None:
-        kwargs['stop'] = stop
+    # Guard: system + persona conflict
+    if system is not None and persona is not None:
+        raise ValueError("Cannot pass both 'system' and 'persona' — use one or the other")
 
-    if stream:
-        stream_obj = Stream()
-        for event in _client._stream_chat(prompt, model, **kwargs):
-            stream_obj.add(event)
-        return stream_obj
-    else:
-        return _client._chat(prompt, model, **kwargs)
+    # Guard: json + stream conflict
+    if response_format == "json" and stream:
+        raise ValueError("response_format='json' cannot be combined with stream=True")
+
+    # Inject JSON instruction into system prompt
+    effective_system = system
+    if response_format == "json":
+        json_instruction = "Respond only with valid JSON. No prose, no markdown."
+        effective_system = f"{system}\n{json_instruction}" if system else json_instruction
+
+    # Resolve session
+    session_id = _resolve_session_id(session)
+
+    # Build kwargs
+    kwargs = _build_kwargs(
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+        stop=stop,
+        system=effective_system,
+        session_id=session_id,
+    )
+
+    # Detect running event loop — return coroutine if inside one
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None and loop.is_running():
+        return _async_chat(prompt, model, stream, session_id, response_format, routing, timeout, max_retries, retry_backoff, kwargs)
+
+    result = _sync_chat(prompt, model, stream, session_id, response_format, routing, timeout, max_retries, retry_backoff, kwargs)
+
+    # Schema validation
+    if schema is not None and isinstance(result, dict):
+        try:
+            import jsonschema  # type: ignore
+        except ImportError:
+            raise ImportError(
+                "The 'jsonschema' package is required for schema validation. "
+                "Install it with: pip install jsonschema"
+            )
+        jsonschema.validate(result, schema)
+
+    return result
