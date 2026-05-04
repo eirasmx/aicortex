@@ -1,6 +1,6 @@
 # 🤖 Model Management
 
-AI Cortex ships with a built-in database of hundreds of community-hosted Ollama models, organized by family. This page covers how to browse and query that catalog, how to read rich model metadata, and how to keep the database fresh with the four-step discovery pipeline.
+AI Cortex ships with a built-in registry of hundreds of models hosted on community cloud servers, organized by family. This page covers how to browse and query that catalog, how to read rich model metadata, and how to keep the registry fresh with the four-step discovery pipeline.
 
 ## 📦 Model Families
 

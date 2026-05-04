@@ -7,14 +7,15 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="aicortex-core",
-    version="1.0.3",
+    version="1.0.4",
     author="Erasmus A. Junior",
     author_email="eirasmx@duck.com",
     maintainer="Erasmus A. Junior",
     maintainer_email="eirasmx@duck.com",
     description=(
-        "AI Cortex: An LLM API toolkit for any language model through Ollama servers. "
-        "Access Gemma, Mistral, Deepseek, Qwen, Llama, and more - completely free, zero-signup, zero API keys. "
+        "AI Cortex: A Python toolkit for free access to cloud and local language models. "
+        "Chat with Gemma, Mistral, Deepseek, Qwen, Llama, and more through community-hosted cloud endpoints or your own Ollama server — "
+        "completely free, zero-signup, zero API keys. "
         "Unified chat API, real-time streaming, multi-server orchestration, and OpenAI-compatible endpoints."
     ),
     long_description=long_description,

@@ -1,17 +1,18 @@
 <p align="center">
   <h1 align="center">🧠 AI Cortex</h1>
-  <p align="center"><strong>The unified Python toolkit for accessing any LLM through Ollama.<br>Zero API keys. Zero signup. Completely free.</strong></p>
+  <p align="center"><strong>A Python toolkit for free access to cloud and local language models.<br>Zero API keys. Zero signup. Completely free.</strong></p>
   <p align="center">
     <a href="https://pypi.org/project/aicortex-core/"><img src="https://img.shields.io/pypi/v/aicortex-core" alt="PyPI Version"></a>
     <a href="https://pepy.tech/projects/aicortex-core"><img src="https://static.pepy.tech/badge/aicortex-core" alt="Downloads"></a>
     <a href="https://pypi.org/project/aicortex-core/"><img src="https://img.shields.io/pypi/pyversions/aicortex-core" alt="Python Versions"></a>
     <a href="https://www.gnu.org/licenses/lgpl-3.0"><img src="https://img.shields.io/badge/License-LGPL_v3-blue.svg" alt="License"></a>
+    <a href="https://deepwiki.com/eirasmx/aicortex"><img src="https://img.shields.io/badge/DeepWiki-eirasmx%2Faicortex-blue" alt="DeepWiki"></a>
   </p>
 </p>
 
 ---
 
-AI Cortex gives you a single, clean Python interface to **hundreds of language models** — Llama, Mistral, Gemma, DeepSeek, Qwen, and more — all served through [Ollama](https://ollama.com). No accounts. No credit cards. No rate limits.
+AI Cortex gives you a single, clean Python interface to **hundreds of language models** — Llama, Mistral, Gemma, DeepSeek, Qwen, and more — running on community-hosted cloud servers or your own local Ollama instance. No accounts. No credit cards. No rate limits.
 
 ```python
 from aicortex import chat
@@ -28,7 +29,7 @@ print(response)
 |---|---|
 | 🆓 **100% Free** | No API keys, no billing, no subscriptions — ever |
 | 🤖 **Any Model** | Llama, Mistral, Gemma, DeepSeek, Qwen, and more |
-| 🌐 **Any Server** | Local Ollama, remote servers, or community endpoints |
+| 🌐 **Cloud or Local** | Community-hosted cloud endpoints or your own Ollama server |
 | ⚡ **Streaming** | Real-time token streaming for responsive UIs |
 | 🔌 **OpenAI-Compatible** | Drop-in replacement for OpenAI client apps |
 | 🛡️ **Type-Safe** | Full type hints, stubs, and IDE autocomplete |
@@ -101,7 +102,7 @@ print(info['parameter_size'], info['quantization_level'])
 ```python
 from aicortex import list_model_servers, get_server_info, get_llm_params
 
-# All Ollama servers hosting a model
+# All servers hosting a model — cloud and local
 servers = list_model_servers("llama3.2:3b")
 for s in servers:
     print(f"{s['url']} — {s['location']['city']}, {s['location']['country']}")

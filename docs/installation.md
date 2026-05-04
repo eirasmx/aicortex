@@ -8,12 +8,12 @@ No account, no API key, no configuration file required.
 | Requirement | Version |
 |---|---|
 | Python | 3.8 or higher |
-| Ollama | Any recent version (local or remote) |
+| Ollama | Required only for local model hosting — not needed for cloud access |
 
-> **💡 No Ollama? No problem.**
-> AI Cortex ships with bundled metadata for community-hosted Ollama endpoints,
-> so you can start chatting even without a local Ollama installation.
-> For production use, running your own Ollama server is recommended.
+> **💡 No local setup needed.**
+> AI Cortex ships with a bundled registry of community-hosted cloud endpoints,
+> so you can start chatting immediately — no Ollama installation, no local server, no configuration.
+> Running your own Ollama server is supported and recommended when you need privacy or lower latency.
 
 ## Basic Installation
 
@@ -59,9 +59,9 @@ cd aicortex
 pip install -e ".[server,dev]"
 ```
 
-## Installing Ollama (Optional but Recommended)
+## Installing Ollama (For Local Hosting)
 
-For the best performance and privacy, run Ollama locally:
+Ollama is only required if you want to run models on your own machine. Cloud access works without it.
 
 **macOS / Linux:**
 ```bash
@@ -121,7 +121,7 @@ pip install --upgrade aicortex-core
 → Make sure you installed into the correct Python environment. Try `python -m pip install aicortex-core`.
 
 **`RuntimeError: No servers available for model '...'`**
-→ No live Ollama server was found for that model. Run `ollama serve` locally, or check that your remote server is reachable.
+→ No live server was found for that model. Either the community endpoints for that model are temporarily down, or you're trying to run locally without `ollama serve` running. Try a different model, or check that your local Ollama server is reachable.
 
 **`ImportError: FastAPI server requires additional dependencies`**
 → You tried to call `run_server()` without the server extras. Run `pip install aicortex-core[server]`.

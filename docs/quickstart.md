@@ -19,7 +19,7 @@ print(response)
 
 **That's it.** No API key. No config file. No server setup required.
 
-AI Cortex automatically selects a model and routes your request to an available Ollama server from its bundled endpoint registry.
+AI Cortex automatically selects a model and routes your request to an available server from its bundled registry of community-hosted cloud endpoints.
 
 ## Step 3 — Pick a Model
 
@@ -79,7 +79,7 @@ from aicortex import get_model_info, list_model_servers, get_server_info
 info = get_model_info("llama3.2:3b")
 print(info)
 
-# See all Ollama servers hosting a specific model
+# See all servers hosting a specific model — cloud and local
 servers = list_model_servers("llama3.2:3b")
 for s in servers:
     print(f"  {s['url']}  —  {s['location']['city']}, {s['location']['country']}")

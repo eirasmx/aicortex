@@ -26,7 +26,8 @@ class _OllamaAPI:
 
     Args:
         max_tokens: Default token budget used in :meth:`build_api_request` when
-            ``num_predict`` is not supplied by the caller.  Defaults to ``128``.
+            ``num_predict`` is not supplied by the caller.  Defaults to ``None``
+            (server decides).
 
     Attributes:
         _models_data: Raw per-family model dicts, keyed by family name.
@@ -34,12 +35,13 @@ class _OllamaAPI:
         _max_tokens: Default generation token budget.
     """
 
-    def __init__(self, max_tokens: int = 128) -> None:
+    def __init__(self, max_tokens: Optional[int] = None) -> None:
         """Initialise the client and eagerly load all bundled model data.
 
         Args:
             max_tokens: Default ``num_predict`` cap injected into every request
-                payload that does not specify one explicitly.
+                payload that does not specify one explicitly.  ``None`` (the
+                default) omits ``num_predict`` and lets the server decide.
         """
         self._models_data: Dict[str, List[Dict[str, Any]]] = self._load_models_data()
         self._families: Dict[str, List[str]] = self._extract_families()
@@ -341,9 +343,12 @@ class _OllamaAPI:
                 "temperature": kwargs.get('temperature', 0.7),
                 "top_p": kwargs.get('top_p', 0.9),
                 "stop": kwargs.get('stop', []),
-                "num_predict": kwargs.get('num_predict', self._max_tokens),
             },
         }
+
+        num_predict = kwargs.get('num_predict', self._max_tokens)
+        if num_predict is not None:
+            payload["options"]["num_predict"] = num_predict
 
         if prompt:
             payload["prompt"] = prompt
@@ -414,7 +419,7 @@ class _OllamaAPI:
         attempt = 0
         for server in servers[:max_retries]:  # limit to max_retries servers
             try:
-                client = Client(host=server['url'])
+                client = Client(host=server['url'], timeout=timeout)
                 request = self.build_api_request(model, prompt, **kwargs)
                 response = client.generate(**request)
                 if isinstance(response, dict):
@@ -471,7 +476,7 @@ class _OllamaAPI:
 
         for server in servers[:max_retries]:
             try:
-                client = Client(host=server['url'])
+                client = Client(host=server['url'], timeout=timeout)
                 request = self.build_api_request(model, prompt, **kwargs)
                 request['stream'] = True
 

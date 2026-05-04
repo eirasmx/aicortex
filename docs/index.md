@@ -1,6 +1,6 @@
 # 🧠 AI Cortex
 
-**The unified Python toolkit for accessing any LLM through Ollama — zero API keys, zero signup, completely free.**
+**A Python toolkit for free access to cloud and local language models — zero API keys, zero signup, completely free.**
 
 [![PyPI Version](https://img.shields.io/pypi/v/aicortex-core)](https://pypi.org/project/aicortex-core/)
 [![Downloads](https://static.pepy.tech/badge/aicortex-core)](https://pepy.tech/projects/aicortex-core)
@@ -9,7 +9,7 @@
 
 ## What is AI Cortex?
 
-AI Cortex gives you a single, clean Python interface to **hundreds of language models** — Llama, Mistral, Gemma, DeepSeek, Qwen, and more — all served through [Ollama](https://ollama.com). No accounts. No credit cards. No rate limits.
+AI Cortex gives you a single, clean Python interface to **hundreds of language models** — Llama, Mistral, Gemma, DeepSeek, Qwen, and more — running on community-hosted cloud servers or your own local Ollama instance. No accounts. No credit cards. No rate limits.
 
 Whether you're building a chatbot, a code assistant, a research tool, or an AI-powered app, AI Cortex handles the model discovery, server routing, and API compatibility so you don't have to.
 
@@ -27,7 +27,7 @@ print(response)
 |---|---|
 | 🆓 **100% Free** | No API keys, no billing, no subscriptions — ever |
 | 🤖 **Any Model** | Llama, Mistral, Gemma, DeepSeek, Qwen, and more |
-| 🌐 **Any Server** | Local Ollama, remote servers, or community endpoints |
+| 🌐 **Cloud or Local** | Community-hosted cloud endpoints or your own Ollama server |
 | ⚡ **Streaming** | Real-time token streaming for responsive UIs |
 | 🔌 **OpenAI-Compatible** | Drop-in replacement for `openai` client apps |
 | 🛡️ **Type-Safe** | Full type hints, stubs, and IDE autocomplete |

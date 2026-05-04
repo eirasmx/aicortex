@@ -12,6 +12,20 @@ AI Cortex adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.4] — 2026-05-04
+
+### ✨ Changed
+
+- **`max_tokens` default changed from `128` → `None`** — the old hard cap of 128 tokens silently truncated long responses.  `None` omits `num_predict` from the Ollama request entirely, letting the server apply its own default (typically unlimited or model-specific).  Callers who need a budget can still pass `max_tokens=<int>` explicitly.
+- **`_OllamaAPI.__init__` signature updated** — `max_tokens` parameter type broadened to `Optional[int]` and default set to `None` to match the above change.  `build_api_request` now omits `num_predict` from the options dict when the resolved value is `None`.
+
+### 🐛 Fixed
+
+- **`timeout` now wired into the Ollama client** — `timeout` was accepted and popped from kwargs in both `_chat` and `_stream_chat` but never forwarded to `ollama.Client`, making it a no-op.  It is now passed as `Client(host=..., timeout=timeout)` so the declared 30-second default actually takes effect.
+- **DeepWiki badge added to README** — links to `https://deepwiki.com/eirasmx/aicortex`.
+
+---
+
 ## [1.0.3] — 2026-05-03
 
 ### ✨ Added
