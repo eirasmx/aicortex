@@ -50,7 +50,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterator, List, Literal, Optional, Union
+from typing import Any, Dict, Generator, Iterator, List, Literal, Optional, Union
 
 from .api import _OllamaAPI
 from .session import Session, _SESSION_STORE
@@ -123,6 +123,71 @@ class Stream:
         )
 
 
+class _LazyStream:
+    """A streaming wrapper that yields :class:`StreamEvent` objects in real time.
+
+    Unlike :class:`Stream` (which is a pre-populated list), ``_LazyStream``
+    pulls events from the underlying ``_stream_chat`` generator on demand so
+    that sync callers see tokens as they arrive rather than after the full
+    response has buffered.
+
+    It satisfies the same public interface as :class:`Stream`:
+    - iterable (``for event in lazy_stream``)
+    - ``.text()`` — forces full consumption then returns concatenated tokens
+    - ``.events`` — populated as iteration proceeds; fully populated after .text()
+
+    Session history is updated automatically once the generator is exhausted,
+    whether the caller drains it via iteration or via ``.text()``.
+    """
+
+    def __init__(
+        self,
+        gen,
+        session_id: Optional[str],
+        prompt: str,
+    ) -> None:
+        self._gen = gen
+        self._session_id = session_id
+        self._prompt = prompt
+        self.events: List[StreamEvent] = []
+        self._exhausted = False
+
+    def __iter__(self) -> Iterator[StreamEvent]:
+        for event in self._gen:
+            self.events.append(event)
+            yield event
+        if not self._exhausted:
+            self._exhausted = True
+            self._flush_session()
+
+    def __aiter__(self):
+        return _AsyncIteratorWrapper(iter(self))
+
+    def _flush_session(self) -> None:
+        """Write accumulated tokens to session history exactly once."""
+        if self._session_id is None:
+            return
+        text = "".join(
+            e.content or "" for e in self.events if e.type == "token"
+        )
+        if text:
+            _SESSION_STORE[self._session_id].append(
+                {"role": "user", "content": self._prompt}
+            )
+            _SESSION_STORE[self._session_id].append(
+                {"role": "assistant", "content": text}
+            )
+
+    def text(self) -> str:
+        """Consume the stream fully and return all token content as a string."""
+        if not self._exhausted:
+            for _ in self:   # drains __iter__, which sets _exhausted + flushes
+                pass
+        return "".join(
+            e.content or "" for e in self.events if e.type == "token"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -181,21 +246,33 @@ def _sync_chat(
     max_retries: int,
     retry_backoff: float,
     kwargs: Dict[str, Any],
-) -> Union[str, dict, Stream]:
+) -> Union[str, dict, Stream, Iterator]:
     preferred_url = _pick_server_url(model, routing)
     if preferred_url:
         kwargs["_preferred_server_url"] = preferred_url
 
     if stream:
-        stream_obj = Stream()
-        for event in _client._stream_chat(prompt, model, timeout=timeout, max_retries=max_retries, retry_backoff=retry_backoff, **kwargs):
-            stream_obj.add(event)
-        if session_id is not None:
-            text = stream_obj.text()
-            if text:
-                _SESSION_STORE[session_id].append({"role": "user", "content": prompt})
-                _SESSION_STORE[session_id].append({"role": "assistant", "content": text})
-        return stream_obj
+        # Sync path: return a _LazyStream so the caller receives tokens in real
+        # time as they arrive from the server.  Eager buffering (the previous
+        # approach) silently broke chunk-by-chunk printing because all events
+        # were collected before the function returned.
+        #
+        # _LazyStream wraps the _stream_chat generator, yields events on demand,
+        # and flushes session history automatically when the generator exhausts —
+        # whether the caller drains it via `for event in stream` or via .text().
+        #
+        # NOTE: _async_chat does NOT go through _sync_chat for the streaming
+        # path — it consumes _stream_chat eagerly in its own executor closure
+        # (run_in_executor can only return a value, not yield incrementally).
+        return _LazyStream(
+            _client._stream_chat(
+                prompt, model,
+                timeout=timeout, max_retries=max_retries,
+                retry_backoff=retry_backoff, **kwargs,
+            ),
+            session_id=session_id,
+            prompt=prompt,
+        )
 
     raw = _client._chat(prompt, model, timeout=timeout, max_retries=max_retries, retry_backoff=retry_backoff, **kwargs)
 
@@ -226,6 +303,33 @@ async def _async_chat(
 ) -> Union[str, dict, Stream]:
     import functools
     loop = asyncio.get_event_loop()
+
+    if stream:
+        # run_in_executor cannot yield incrementally — it returns a single
+        # value once the callable returns.  _sync_chat now returns a _LazyStream
+        # (an unconsumed generator) which would arrive at the async caller
+        # unevaluated.  Instead, consume _stream_chat eagerly inside the executor
+        # closure and return a fully-populated Stream.  Async callers therefore
+        # receive a Stream they can iterate (or call .text() on) after awaiting.
+        def _consume() -> Stream:
+            stream_obj = Stream()
+            accumulated: List[str] = []
+            for event in _client._stream_chat(
+                prompt, model,
+                timeout=timeout, max_retries=max_retries,
+                retry_backoff=retry_backoff, **kwargs,
+            ):
+                stream_obj.add(event)
+                if event.type == "token" and event.content:
+                    accumulated.append(event.content)
+            if session_id is not None:
+                text = "".join(accumulated)
+                if text:
+                    _SESSION_STORE[session_id].append({"role": "user", "content": prompt})
+                    _SESSION_STORE[session_id].append({"role": "assistant", "content": text})
+            return stream_obj
+        return await loop.run_in_executor(None, _consume)
+
     return await loop.run_in_executor(
         None,
         functools.partial(

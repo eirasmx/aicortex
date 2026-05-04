@@ -7,7 +7,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="aicortex-core",
-    version="1.0.4",
+    version="1.1.0",
     author="Erasmus A. Junior",
     author_email="eirasmx@duck.com",
     maintainer="Erasmus A. Junior",
@@ -68,6 +68,7 @@ setup(
     entry_points={
         "console_scripts": [
             "aicortex-server=aicortex.tools.server:run_server",
+            "aicortex=aicortex.__main__:main",
         ],
     },
     keywords=[
@@ -80,6 +81,10 @@ setup(
         "free",
         "no-signup",
         "local-models",
+        "cloud-models",
+        "ollama",
+        "sdk",
+        "toolkit",
     ],
     classifiers=[
         "Development Status :: 4 - Beta",

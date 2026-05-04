@@ -12,6 +12,60 @@ AI Cortex adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.1.0] — 2026-05-04
+
+### ✨ Added
+
+#### CLI Entry Point (`3.1`)
+- `aicortex chat <prompt>` — send a prompt from the terminal with full flag support
+- `--model`, `--stream`, `--temperature`, `--system`, `--session`, `--routing`, `--timeout` flags on `aicortex chat`
+- `aicortex models` — list all model families with counts; `--family` to scope to one family; `--search` to find by name
+- `aicortex servers <model>` — list all known Ollama servers for a model with url, city, country, and tps columns
+- `aicortex` console script registered in `setup.py` — available after `pip install`
+- `python -m aicortex` also works as an alternative invocation
+- `--session` flag accepts a raw session id string — raises with a clear error if the id is not found in the store (mirrors `chat(session="id")` from 1.1)
+- Streaming output prints tokens incrementally as they arrive — not buffered
+
+#### `search_models()` — Cross-Family Model Search (`3.2`)
+- `search_models(query, *, family, generation, min_params, max_params) -> list[str]` top-level function
+- Case-insensitive substring match on model names across all families
+- `family` param scopes search to one family (case-insensitive)
+- `generation` param filters by generation field on model records (prepared for Section 6.1.2 pipeline update)
+- `min_params` / `max_params` filter by parameter size (e.g. `"7b"`, `"70b"`) parsed as numeric billions
+- Results sorted by parameter size descending
+- Exported from `aicortex.__init__` and documented in `docs/usage.md`
+
+### 🐛 Fixed
+
+#### Session chat routed to wrong Ollama endpoint (`api.py _chat` / `_stream_chat`)
+- **Bug 1 — `client.generate()` called with a `messages` payload.**
+  When a session is active, `_build_kwargs()` in `chat.py` correctly inserts `messages` into
+  `kwargs`, and `build_api_request()` forwards them into the request dict.  Both `_chat()` and
+  `_stream_chat()` then unconditionally called `client.generate()` (Ollama `/api/generate`),
+  which does not accept a `messages` parameter.  Every server attempt threw a `TypeError`,
+  was caught by the retry loop, and exhausted `max_retries`, resulting in
+  `RuntimeError: All server attempts failed` even when the servers were healthy.
+- **Bug 2 — Current user turn never appended to the message history.**
+  Even if the endpoint were correct, the new prompt was placed in a separate `"prompt"` key
+  while `"messages"` held only past turns.  Ollama's `/api/chat` endpoint requires the new
+  user turn to be appended to `messages`; a bare `"prompt"` key is silently ignored there.
+- **Fix — `api.py _chat()` and `_stream_chat()`:** after `build_api_request(...)`, both methods
+  now branch on `"messages" in request`.  When messages are present (session active):
+  the current user prompt is appended as `{"role": "user", "content": prompt}`, the
+  generate-only `"prompt"` key is removed, and `client.chat()` / `client.chat(stream=True)` is
+  called instead of `client.generate()`.  When no messages are present the existing
+  `client.generate()` path is taken unchanged.  Content extraction in `_stream_chat()` was
+  also updated to read `chunk.message.content` (the field used by the chat endpoint) in
+  addition to the existing `chunk.response` path used by the generate endpoint.
+
+### 📖 Changed
+
+- `docs/usage.md` updated with CLI reference and `search_models()` usage examples
+- `__init__.py` module docstring updated with CLI quickstart examples
+- Version bumped from `1.0.4` → `1.1.0` — new features, backward-compatible
+
+---
+
 ## [1.0.4] — 2026-05-04
 
 ### ✨ Changed
@@ -177,6 +231,7 @@ Each release section uses these headings:
 
 ---
 
+[1.1.0]: https://github.com/eirasmx/aicortex/releases/tag/v1.1.0
 [1.0.3]: https://github.com/eirasmx/aicortex/releases/tag/v1.0.3
 [1.0.2]: https://github.com/eirasmx/aicortex/releases/tag/v1.0.2
 [1.0.1]: https://github.com/eirasmx/aicortex/releases/tag/v1.0.1

@@ -30,11 +30,23 @@ Public API summary:
 - :func:`build_api_request` — Build a raw Ollama request payload.
 - :func:`get_llm_params` — ``{"model": …, "base_url": …}`` ready for LangChain.
 - :func:`get_random_llm_params` — Same as above but with a random model.
+- :func:`search_models` — Search model names across families by substring, size, or generation.
+
+CLI (``python -m aicortex`` or ``aicortex`` console script)::
+
+    aicortex chat "Hello!"                        # send a prompt
+    aicortex chat "Hello!" --stream               # stream tokens
+    aicortex chat "Hello!" --session my-id        # multi-turn session
+    aicortex chat "Hello!" --routing fastest      # use fastest server
+    aicortex models                               # list all families
+    aicortex models --family gemma                # list gemma models
+    aicortex models --search 70b                  # search by name
+    aicortex servers llama3.2:3b                  # list servers for a model
 """
 
 from typing import Any, Dict, List, Optional
 from . import tools
-from .api import _OllamaAPI, best_server
+from .api import _OllamaAPI, best_server, search_models, _has_internet as has_internet, _FAILED_SERVERS
 from .cache import clear_server_cache
 from .chat import Stream, StreamEvent, chat
 from .session import Session
@@ -56,10 +68,11 @@ __all__ = [
     'build_api_request',
     'get_llm_params',
     'get_random_llm_params',
+    'search_models',
     'tools',
 ]
 
-__version__ = "1.0.3"
+__version__ = "1.1.0"
 
 
 def families() -> List[str]:
@@ -299,3 +312,51 @@ def get_random_llm_params() -> Dict[str, str]:
         qwen2.5:7b
     """
     return _client.get_random_llm_params()
+
+
+def search_models(
+    query: str,
+    *,
+    family: Optional[str] = None,
+    generation: Optional[int] = None,
+    min_params: Optional[str] = None,
+    max_params: Optional[str] = None,
+) -> List[str]:
+    """Search model names across all families by substring, size, or generation.
+
+    Args:
+        query: Case-insensitive substring to match against model names.
+        family: Optional family name to scope search (e.g. ``"gemma"``).
+            ``None`` searches all families.
+        generation: Optional generation integer filter (e.g. ``3`` for gemma3).
+            Requires the ``generation`` field in bundled metadata (added in
+            Section 6.1.2 pipeline update). ``None`` disables the filter.
+        min_params: Minimum parameter size string (e.g. ``"7b"``). Models
+            smaller than this are excluded.
+        max_params: Maximum parameter size string (e.g. ``"70b"``). Models
+            larger than this are excluded.
+
+    Returns:
+        A list of model name strings sorted by parameter size descending.
+        Returns an empty list if no models match.
+
+    Example::
+
+        >>> from aicortex import search_models
+        >>> search_models("70b")
+        ['llama3.1:70b', 'qwen2.5:72b', ...]
+
+        >>> search_models("llama", min_params="8b", max_params="70b")
+        ['llama3.1:70b', 'llama3.1:8b']
+
+        >>> search_models("gemma", family="gemma", generation=3)
+        ['gemma3:27b', 'gemma3:12b', 'gemma3:4b', 'gemma3:1b']
+    """
+    from .api import search_models as _search_models
+    return _search_models(
+        query,
+        family=family,
+        generation=generation,
+        min_params=min_params,
+        max_params=max_params,
+    )

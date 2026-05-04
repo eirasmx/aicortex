@@ -16,7 +16,7 @@ from aicortex import Session
 from aicortex import best_server, clear_server_cache
 
 # Model discovery
-from aicortex import families, models, get_model_info
+from aicortex import families, models, get_model_info, search_models
 
 # Server discovery
 from aicortex import list_model_servers, get_server_info
@@ -549,3 +549,115 @@ except RuntimeError as e:
 - 🔀 [Streaming in depth](streaming.md) — all `StreamEvent` types, async patterns, UI integration
 - 🤖 [Model Management](models.md) — how the JSON registry works, updating model data
 - 🖥️ [Server Mode](server.md) — expose AI Cortex as an OpenAI-compatible REST API
+
+
+---
+
+## CLI — `aicortex` Command
+
+AI Cortex ships a command-line interface accessible via `aicortex` (after install)
+or `python -m aicortex`.
+
+### `aicortex chat`
+
+Send a prompt and print the response.
+
+```bash
+# Basic chat
+aicortex chat "Explain neural networks in one sentence."
+
+# Choose a model
+aicortex chat "Hello!" --model gemma3:4b
+
+# Stream tokens as they arrive
+aicortex chat "Write a short poem." --stream
+
+# Set a system prompt
+aicortex chat "What is my name?" --system "You are a helpful assistant named Aria."
+
+# Use fastest server routing
+aicortex chat "Hello" --routing fastest --timeout 10
+
+# Multi-turn session (session must be created in Python first via Session())
+aicortex chat "What did I just tell you?" --session my-session-id
+```
+
+**All flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--model`, `-m` | `llama3.2:3b` | Model to use |
+| `--stream`, `-s` | off | Stream tokens incrementally |
+| `--temperature`, `-t` | `0.7` | Sampling temperature |
+| `--system` | — | System prompt (raw string) |
+| `--session` | — | Session id for multi-turn memory |
+| `--routing` | `random` | `random`, `fastest`, or `nearest` |
+| `--timeout` | `30.0` | Seconds before server timeout |
+
+---
+
+### `aicortex models`
+
+List available model families and their models.
+
+```bash
+# List all families with model counts
+aicortex models
+
+# List models in a specific family
+aicortex models --family gemma
+
+# Search across all families by name substring
+aicortex models --search 70b
+aicortex models --search llama --family llama
+```
+
+---
+
+### `aicortex servers`
+
+List all known Ollama servers hosting a specific model.
+
+```bash
+aicortex servers llama3.2:3b
+aicortex servers mistral:7b
+```
+
+Output includes URL, city, country, and tokens-per-second for each server.
+
+---
+
+## `search_models()` — Cross-Family Model Search
+
+Find models by name substring across all families, with optional filters for
+family, generation, and parameter size.
+
+```python
+from aicortex import search_models
+
+# Search by name substring — returns all models containing "70b"
+results = search_models("70b")
+print(results)  # ['llama3.1:70b', 'qwen2.5:72b', ...]
+
+# Scope to one family
+results = search_models("llama", family="llama")
+
+# Filter by parameter size range
+results = search_models("llama", min_params="8b", max_params="70b")
+
+# Filter by generation (requires pipeline update — Section 6.1.2)
+results = search_models("gemma", family="gemma", generation=3)
+# → ['gemma3:27b', 'gemma3:12b', 'gemma3:4b', 'gemma3:1b']
+```
+
+**Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `query` | `str` | Case-insensitive substring to match against model names |
+| `family` | `str \| None` | Scope to one family; `None` searches all |
+| `generation` | `int \| None` | Filter by generation (e.g. `3` for gemma3) |
+| `min_params` | `str \| None` | Minimum size e.g. `"7b"` — smaller models excluded |
+| `max_params` | `str \| None` | Maximum size e.g. `"70b"` — larger models excluded |
+
+Results are sorted by parameter size descending. Returns `[]` if nothing matches.
