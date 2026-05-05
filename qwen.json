@@ -1,0 +1,729 @@
+/**
+ * 🧠 aicortex.js  v1.3.0
+ * JavaScript SDK for AI Cortex — free LLMs in the browser and Node.js.
+ *
+ * Zero API keys. Zero signup. Zero server setup. Completely free.
+ * Models are served by the open-source community via Ollama.
+ *
+ * Registry resolution order (first live source wins):
+ *   1. Local folder  — Node.js only: ./models/<family>.json (or AICORTEX_MODELS_DIR)
+ *   2. npm-hosted    — https://unpkg.com/aicortex/models/<family>.json
+ *   3. GitHub raw    — https://raw.githubusercontent.com/eirasmx/aicortex/main/web/models/
+ *
+ * All remote fetches are cached with a configurable TTL (default 1 h).
+ * If all sources fail, the registry is empty and an AICortexModelNotFoundError
+ * is thrown when attempting to chat.
+ *
+ * @example  ES module / npm
+ *   import AICortex from 'aicortex';
+ *   const ai = new AICortex();
+ *   const reply = await ai.chat('Explain neural networks like I am five.');
+ *   console.log(reply);
+ *
+ * @example  CDN — no install needed
+ *   <script src="https://unpkg.com/aicortex/aicortex.js"></script>
+ *   <script>
+ *     const ai = new AICortex();
+ *     ai.chat('Hello!').then(console.log);
+ *   </script>
+ */
+
+(function (root, factory) {
+  if (typeof define === 'function' && define.amd) {
+    define([], factory);
+  } else if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.AICortex = factory();
+  }
+}(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : this, function () {
+  'use strict';
+
+  // ─── Environment detection ────────────────────────────────────────────────────
+
+  const _isNode = typeof process !== 'undefined' &&
+                  process.versions != null &&
+                  process.versions.node != null;
+
+
+  // ─── Dynamic registry ─────────────────────────────────────────────────────────
+
+  /**
+   * Registered remote sources, tried in order.
+   * npm-hosted (unpkg) is first because it tracks the published package version,
+   * GitHub raw is the upstream truth, and npm CDN (jsDelivr) is an extra mirror.
+   *
+   * Each source is a function that takes a family name and returns a URL string.
+   */
+  const _REMOTE_SOURCES = [
+    fam => `https://unpkg.com/aicortex/models/${fam}.json`,
+    fam => `https://raw.githubusercontent.com/eirasmx/aicortex/main/web/models/${fam}.json`,
+    fam => `https://cdn.jsdelivr.net/npm/aicortex/models/${fam}.json`,
+  ];
+
+  /** Index of known families — fetched from the remote on first use. */
+  const _FAMILY_INDEX_SOURCES = [
+    () => 'https://unpkg.com/aicortex/models/index.json',
+    () => 'https://raw.githubusercontent.com/eirasmx/aicortex/main/web/models/index.json',
+  ];
+
+  // ─── In-memory registry cache (runtime) ──────────────────────────────────────
+  // Holds the merged live registry once fetched. Starts as null so we can detect
+  // "not yet loaded". Requests that arrive before the first fetch completes all
+  // wait on the same promise (_registryReady).
+
+  let _registry = null;           // null = not loaded, Array = loaded
+  let _registryReady = null;      // Promise<void> — shared fetch in-flight
+  let _registryFetchedAt = 0;     // monotonic ms timestamp of last successful fetch
+  let _registryTTL = 60 * 60 * 1000;  // 1 hour — configurable via AICortex.registryTTL
+
+  // ─── Persistent cache (localStorage / Node fs) ───────────────────────────────
+
+  const _CACHE_KEY    = 'aicortex_registry';
+  const _CACHE_TS_KEY = 'aicortex_registry_ts';
+
+  /** Read the persistent cache. Returns null if absent or unparseable. */
+  function _persistRead() {
+    try {
+      if (_isNode) {
+        // Node: use filesystem cache in OS temp dir
+        const fs   = require('fs');
+        const path = require('path');
+        const dir  = _nodeModelsDir() || require('os').tmpdir();
+        const file = path.join(dir, '.aicortex_registry_cache.json');
+        if (!fs.existsSync(file)) return null;
+        const { ts, data } = JSON.parse(fs.readFileSync(file, 'utf8'));
+        return { ts: Number(ts), data };
+      } else {
+        // Browser: localStorage
+        const ts   = localStorage.getItem(_CACHE_TS_KEY);
+        const raw  = localStorage.getItem(_CACHE_KEY);
+        if (!ts || !raw) return null;
+        return { ts: Number(ts), data: JSON.parse(raw) };
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Write to the persistent cache. Silently ignores errors. */
+  function _persistWrite(entries) {
+    try {
+      const ts = Date.now();
+      if (_isNode) {
+        const fs   = require('fs');
+        const path = require('path');
+        const dir  = _nodeModelsDir() || require('os').tmpdir();
+        const file = path.join(dir, '.aicortex_registry_cache.json');
+        fs.writeFileSync(file, JSON.stringify({ ts, data: entries }), 'utf8');
+      } else {
+        localStorage.setItem(_CACHE_TS_KEY, String(ts));
+        localStorage.setItem(_CACHE_KEY, JSON.stringify(entries));
+      }
+    } catch (_) {
+      // quota exceeded or no fs access — carry on
+    }
+  }
+
+  // ─── Node.js local models folder ─────────────────────────────────────────────
+
+  /**
+   * In Node, return a user-specified or auto-detected local models directory.
+   * Resolution order:
+   *   1. AICORTEX_MODELS_DIR env var
+   *   2. ./models/  relative to cwd
+   *   3. null (not found)
+   */
+  function _nodeModelsDir() {
+    if (!_isNode) return null;
+    const path = require('path');
+    const fs   = require('fs');
+    const env  = process.env.AICORTEX_MODELS_DIR;
+    if (env && fs.existsSync(env)) return env;
+    const cwd = path.join(process.cwd(), 'models');
+    if (fs.existsSync(cwd)) return cwd;
+    return null;
+  }
+
+  /**
+   * Try to load a family JSON from the local models folder (Node only).
+   * Returns a parsed array/object or null.
+   */
+  function _nodeLocalFamily(family) {
+    if (!_isNode) return null;
+    try {
+      const path = require('path');
+      const fs   = require('fs');
+      const dir  = _nodeModelsDir();
+      if (!dir) return null;
+      const file = path.join(dir, `${family}.json`);
+      if (!fs.existsSync(file)) return null;
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ─── JSON model-data → flat registry entries ─────────────────────────────────
+
+  /**
+   * Convert one family's raw JSON (from models/*.json) into the flat array of
+   * {url, model, family, tps, city, country} entries that _REGISTRY uses.
+   *
+   * The Python-side JSON has the shape:
+   *   [ { name, servers: [ { url, performance: { tokens_per_second }, location: { city, country } } ] } ]
+   * or the legacy nested:
+   *   { props: { pageProps: { models: [...] } } }
+   */
+  function _normaliseFamily(rawData, familyName) {
+    // Unwrap nested shape
+    let models = rawData;
+    if (!Array.isArray(models)) {
+      models = rawData?.props?.pageProps?.models ?? rawData?.models ?? [];
+    }
+    const entries = [];
+    for (const m of models) {
+      if (!m || typeof m !== 'object') continue;
+      const modelName = m.name || m.model_name || m.id || '';
+      if (!modelName) continue;
+      for (const srv of (m.servers || [])) {
+        const url  = srv.url || srv.base_url || '';
+        if (!url) continue;
+        const tps  = Number(srv.performance?.tokens_per_second ?? srv.tps ?? 0);
+        const city = srv.location?.city || srv.city || '';
+        const ctry = srv.location?.country || srv.country || '';
+        entries.push({ url, model: modelName, family: familyName, tps, city, country: ctry });
+      }
+    }
+    return entries;
+  }
+
+  // ─── Remote fetch helpers ─────────────────────────────────────────────────────
+
+  /** Fetch a URL and return parsed JSON, or null on any error. */
+  async function _fetchJson(url) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Fetch from multiple mirror URLs, return first success or null. */
+  async function _fetchJsonMirrors(urlFns, ...args) {
+    for (const fn of urlFns) {
+      const data = await _fetchJson(fn(...args));
+      if (data) return data;
+    }
+    return null;
+  }
+
+  // ─── Registry bootstrap ───────────────────────────────────────────────────────
+
+  /**
+   * Build the live registry by fetching all known families in parallel.
+   * Falls back gracefully at every step:
+   *   - per-family: local → remote mirrors → skip
+   *   - whole registry: fresh fetch → persistent cache → empty (throws if no servers found)
+   */
+  async function _buildLiveRegistry() {
+    // 1. Get the family index (which families exist remotely)
+    let families = null;
+    const indexData = await _fetchJsonMirrors(_FAMILY_INDEX_SOURCES);
+    if (Array.isArray(indexData)) families = indexData;
+
+    // No index available — families will be empty until local/remote loads
+    if (!families) families = [];
+
+    // 2. Fetch each family — local first (Node), then remote mirrors
+    const allEntries = [];
+    await Promise.all(families.map(async fam => {
+      // 2a. Local folder (Node only)
+      let raw = _nodeLocalFamily(fam);
+
+      // 2b. Remote mirrors
+      if (!raw) {
+        raw = await _fetchJsonMirrors(_REMOTE_SOURCES, fam);
+      }
+
+      if (raw) {
+        const entries = _normaliseFamily(raw, fam);
+        allEntries.push(...entries);
+      }
+    }));
+
+    if (allEntries.length === 0) return null;
+
+    // Sort by tps descending
+    allEntries.sort((a, b) => b.tps - a.tps);
+    return allEntries;
+  }
+
+  /**
+   * Ensure _registry is populated. Returns a promise that resolves when ready.
+   * Concurrent callers all share the same in-flight promise.
+   */
+  function _ensureRegistry() {
+    // Already fresh in memory
+    if (_registry && (Date.now() - _registryFetchedAt) < _registryTTL) {
+      return Promise.resolve();
+    }
+
+    // Already fetching — share the promise
+    if (_registryReady) return _registryReady;
+
+    _registryReady = (async () => {
+      try {
+        // Try persistent cache first (fast path on repeat loads)
+        const cached = _persistRead();
+        if (cached && (Date.now() - cached.ts) < _registryTTL && Array.isArray(cached.data) && cached.data.length > 0) {
+          _registry = cached.data;
+          _registryFetchedAt = cached.ts;
+          // Trigger a background refresh if the cache is >50% through its TTL
+          if ((Date.now() - cached.ts) > (_registryTTL * 0.5)) {
+            _buildLiveRegistry().then(live => {
+              if (live) { _registry = live; _registryFetchedAt = Date.now(); _persistWrite(live); }
+            }).catch(() => {});
+          }
+          return;
+        }
+
+        // Full live fetch
+        const live = await _buildLiveRegistry();
+        if (live && live.length > 0) {
+          _registry = live;
+          _registryFetchedAt = Date.now();
+          _persistWrite(live);
+          return;
+        }
+
+        // Stale persistent cache is better than the snapshot
+        if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+          _registry = cached.data;
+          _registryFetchedAt = cached.ts;
+          return;
+        }
+
+        // No servers available — leave _registry as empty array
+        _registry = [];
+        _registryFetchedAt = Date.now();
+      } catch (_) {
+        if (!_registry) _registry = [];
+      } finally {
+        _registryReady = null;
+      }
+    })();
+
+    return _registryReady;
+  }
+
+  /**
+   * Return the active registry synchronously.
+   * If the live registry hasn't loaded yet, returns an empty array.
+   * Synchronous APIs (models(), families(), servers()) will be empty until ready.
+   */
+  function _getRegistry() {
+    return _registry || [];
+  }
+
+  // Kick off the registry fetch immediately on load (fire-and-forget)
+  _ensureRegistry().catch(() => {});
+
+  // ─── Server router ────────────────────────────────────────────────────────────
+
+  const _failed = new Map(); // url → expiry timestamp (ms)
+  const _FAIL_TTL = 120_000; // 2 minutes
+
+  function _markFailed(url) { _failed.set(url, Date.now() + _FAIL_TTL); }
+  function _isFailed(url) {
+    const exp = _failed.get(url);
+    if (!exp) return false;
+    if (Date.now() >= exp) { _failed.delete(url); return false; }
+    return true;
+  }
+
+  /**
+   * Return the best registry entry for the given model (or any model if null).
+   * Non-failed servers are preferred; within those, highest tps wins.
+   */
+  function _pickServer(model) {
+    const reg = _getRegistry();
+    const candidates = model
+      ? reg.filter(e => e.model === model)
+      : reg;
+
+    if (!candidates.length) return null;
+
+    const sorted = [...candidates].sort((a, b) => {
+      const af = _isFailed(a.url) ? -1 : (a.tps || 0);
+      const bf = _isFailed(b.url) ? -1 : (b.tps || 0);
+      return bf - af;
+    });
+
+    return sorted[0];
+  }
+
+  // ─── Errors ───────────────────────────────────────────────────────────────────
+
+  class AICortexError extends Error {
+    constructor(msg, opts = {}) {
+      super(msg);
+      this.name = 'AICortexError';
+      this.status = opts.status ?? null;
+      this.code = opts.code ?? null;
+    }
+  }
+
+  class AICortexConnectionError extends AICortexError {
+    constructor(url) {
+      super(
+        `Could not connect to Ollama server at "${url}". ` +
+        'The server may be offline. aicortex will try the next available server automatically.'
+      );
+      this.name = 'AICortexConnectionError';
+    }
+  }
+
+  class AICortexModelNotFoundError extends AICortexError {
+    constructor(model) {
+      super(
+        `No community servers found for model "${model}". ` +
+        'Call ai.models() for the full list of available models.'
+      );
+      this.name = 'AICortexModelNotFoundError';
+      this.model = model;
+    }
+  }
+
+  // ─── Session ──────────────────────────────────────────────────────────────────
+
+  class Session {
+    constructor() {
+      this.id = Math.random().toString(36).slice(2);
+      this.history = [];
+      this.turns = 0;
+    }
+    _push(role, content) {
+      this.history.push({ role, content });
+      if (role === 'assistant') this.turns++;
+    }
+    reset() { this.history = []; this.turns = 0; }
+    toString() { return `Session(id=${this.id}, turns=${this.turns})`; }
+  }
+
+  // ─── StreamReader ─────────────────────────────────────────────────────────────
+
+  class StreamReader {
+    constructor(fetchFn) {
+      this._fetchFn = fetchFn; // () => Promise<Response>
+      this.text = '';
+    }
+
+    async collect() {
+      let result = '';
+      for await (const token of this) result += token;
+      return result;
+    }
+
+    [Symbol.asyncIterator]() {
+      let buffer = '';
+      let response = null;
+      let reader = null;
+      let done = false;
+
+      const fetchFn = this._fetchFn;
+      const self = this;
+
+      return {
+        async next() {
+          if (done) return { value: undefined, done: true };
+
+          if (!response) {
+            response = await fetchFn();
+            reader = response.body.getReader();
+          }
+
+          while (true) {
+            const nl = buffer.indexOf('\n');
+            if (nl !== -1) {
+              const line = buffer.slice(0, nl).trim();
+              buffer = buffer.slice(nl + 1);
+              if (!line) continue;
+              try {
+                const obj = JSON.parse(line);
+                const token = obj.message?.content ?? obj.response ?? '';
+                if (token) { self.text += token; return { value: token, done: false }; }
+                if (obj.done) { done = true; return { value: undefined, done: true }; }
+              } catch (_) { continue; }
+            }
+
+            const { value, done: streamDone } = await reader.read();
+            if (streamDone) { done = true; return { value: undefined, done: true }; }
+            buffer += new TextDecoder().decode(value);
+          }
+        },
+      };
+    }
+  }
+
+  // ─── AICortex ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Main SDK class.
+   *
+   * @param {object}  [opts]
+   * @param {string}  [opts.model]       Default model name.
+   * @param {string}  [opts.ollamaUrl]   Pin to your own Ollama instance.
+   * @param {number}  [opts.temperature] Sampling temperature (0–2). Default 0.7.
+   * @param {number}  [opts.maxTokens]   Max tokens to generate. Default 1024.
+   * @param {number}  [opts.timeout]     Request timeout ms. Default 30000.
+   * @param {number}  [opts.retries]     Server retry attempts. Default 3.
+   */
+  class AICortex {
+    constructor(opts = {}) {
+      this.defaultModel = opts.model ?? null;
+      this.ollamaUrl = opts.ollamaUrl ? opts.ollamaUrl.replace(/\/$/, '') : null;
+      this.temperature = opts.temperature ?? 0.7;
+      this.maxTokens = opts.maxTokens ?? 1024;
+      this.timeout = opts.timeout ?? 30_000;
+      this.retries = opts.retries ?? 3;
+    }
+
+    // ── Internal helpers ───────────────────────────────────────────────────────
+
+    _resolveServer(model) {
+      if (this.ollamaUrl) {
+        return { url: this.ollamaUrl, model: model ?? this.defaultModel ?? 'llama3.2:3b' };
+      }
+      const target = model ?? this.defaultModel ?? null;
+      const entry = _pickServer(target);
+      if (!entry) throw new AICortexModelNotFoundError(target ?? '(any)');
+      return entry;
+    }
+
+    async _fetchWithRetry(path, body, stream = false) {
+      // Ensure registry is loaded before first real request
+      await _ensureRegistry();
+
+      let lastErr;
+      for (let attempt = 0; attempt < this.retries; attempt++) {
+        const server = this._resolveServer(body.model);
+        const url = `${server.url}${path}`;
+        body.model = server.model;
+
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), this.timeout);
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+
+          if (!response.ok) {
+            _markFailed(server.url);
+            lastErr = new AICortexError(`HTTP ${response.status}`, { status: response.status });
+            continue;
+          }
+
+          return response;
+        } catch (err) {
+          _markFailed(server.url);
+          if (err.name === 'AbortError') {
+            lastErr = new AICortexError(`Request timed out after ${this.timeout}ms`, { code: 'TIMEOUT' });
+          } else {
+            lastErr = new AICortexConnectionError(server.url);
+          }
+        }
+      }
+      throw lastErr;
+    }
+
+    _buildChatBody(prompt, opts, streaming) {
+      const messages = opts.session
+        ? [...opts.session.history, { role: 'user', content: prompt }]
+        : [{ role: 'user', content: prompt }];
+
+      if (opts.system) messages.unshift({ role: 'system', content: opts.system });
+
+      return {
+        model: opts.model ?? this.defaultModel ?? null,
+        messages,
+        stream: streaming,
+        options: {
+          temperature: opts.temperature ?? this.temperature,
+          num_predict: opts.maxTokens ?? this.maxTokens,
+          ...(opts.stop ? { stop: opts.stop } : {}),
+        },
+      };
+    }
+
+    // ── Public API ─────────────────────────────────────────────────────────────
+
+    /**
+     * Send a prompt and get back the full text response (non-streaming).
+     * The registry is fetched/refreshed automatically before the request.
+     *
+     * @param {string} prompt
+     * @param {object} [opts]
+     * @returns {Promise<string>}
+     */
+    async chat(prompt, opts = {}) {
+      const body = this._buildChatBody(prompt, opts, false);
+      const res = await this._fetchWithRetry('/api/chat', body, false);
+      const data = await res.json();
+      const text = data.message?.content ?? data.response ?? '';
+
+      if (opts.session) {
+        opts.session._push('user', prompt);
+        opts.session._push('assistant', text);
+      }
+
+      return text;
+    }
+
+    /**
+     * Stream a response token by token. Returns an async-iterable StreamReader.
+     *
+     * @param {string} prompt
+     * @param {object} [opts]
+     * @returns {StreamReader}
+     */
+    stream(prompt, opts = {}) {
+      const body = this._buildChatBody(prompt, opts, true);
+      return new StreamReader(() => this._fetchWithRetry('/api/chat', body, true));
+    }
+
+    /** Create a new multi-turn Session. */
+    session() { return new Session(); }
+
+    /**
+     * List available model names from the live registry, optionally filtered by family.
+     * Uses the bundled snapshot until the live registry loads.
+     *
+     * @param {string} [family]
+     * @returns {string[]}
+     */
+    models(family) {
+      const all = [...new Set(_getRegistry().map(e => e.model))];
+      if (!family) return all.sort();
+      return all.filter(m => m.toLowerCase().includes(family.toLowerCase())).sort();
+    }
+
+    /**
+     * List available model families from the live registry.
+     * @returns {string[]}
+     */
+    families() {
+      const fams = new Set();
+      for (const e of _getRegistry()) {
+        const fam = e.family || e.model.split(/[\d.:]/)[0].replace(/-$/, '');
+        if (fam && fam !== 'unknown') fams.add(fam);
+      }
+      return [...fams].sort();
+    }
+
+    /**
+     * List all known community servers for a model, sorted by speed.
+     * @param {string} [model]
+     * @returns {Array<{url, model, tps, city, country}>}
+     */
+    servers(model) {
+      const entries = model
+        ? _getRegistry().filter(e => e.model === model)
+        : _getRegistry();
+      return [...entries].sort((a, b) => (b.tps || 0) - (a.tps || 0));
+    }
+
+    /**
+     * Get the best available server for a model.
+     * @param {string} [model]
+     * @returns {{url, model, tps, city, country} | null}
+     */
+    bestServer(model) {
+      return _pickServer(model ?? this.defaultModel ?? null);
+    }
+
+    /**
+     * LangChain-compatible {model, base_url} params.
+     * @param {string} [model]
+     * @returns {{model: string, base_url: string}}
+     */
+    llmParams(model) {
+      const entry = _pickServer(model ?? this.defaultModel ?? null);
+      if (!entry) throw new AICortexModelNotFoundError(model ?? '(any)');
+      return { model: entry.model, base_url: entry.url };
+    }
+
+    /**
+     * Force a fresh registry fetch, ignoring cache TTL.
+     * Useful after calling `aicortex update-js-registry` or to pick up new servers.
+     * @returns {Promise<void>}
+     */
+    async refreshRegistry() {
+      _registry = null;
+      _registryFetchedAt = 0;
+      _registryReady = null;
+      await _ensureRegistry();
+    }
+
+    /**
+     * Return registry source metadata — useful for debugging.
+     * @returns {{ source: string, entries: number, age_s: number }}
+     */
+    registryInfo() {
+      const reg = _getRegistry();
+      const age = _registryFetchedAt ? Math.round((Date.now() - _registryFetchedAt) / 1000) : null;
+      return {
+        source: _registry && _registry.length > 0 ? 'live' : 'empty',
+        entries: reg.length,
+        age_s: age,
+        ttl_s: Math.round(_registryTTL / 1000),
+      };
+    }
+  }
+
+  // ─── Static config & exports ─────────────────────────────────────────────────
+
+  AICortex.Session = Session;
+  AICortex.StreamReader = StreamReader;
+  AICortex.AICortexError = AICortexError;
+  AICortex.AICortexConnectionError = AICortexConnectionError;
+  AICortex.AICortexModelNotFoundError = AICortexModelNotFoundError;
+
+  /** @type {string} */
+  AICortex.version = '1.3.0';
+
+  /**
+   * Registry cache TTL in milliseconds. Default: 3 600 000 (1 hour).
+   * Change before instantiating AICortex to apply globally.
+   *
+   * @example
+   * AICortex.registryTTL = 30 * 60 * 1000; // 30 minutes
+   */
+  Object.defineProperty(AICortex, 'registryTTL', {
+    get: () => _registryTTL,
+    set: (ms) => { _registryTTL = ms; },
+    enumerable: true,
+  });
+
+  /**
+   * Force a module-level registry refresh (useful in scripts/tests).
+   * @returns {Promise<void>}
+   */
+  AICortex.refreshRegistry = async function () {
+    _registry = null;
+    _registryFetchedAt = 0;
+    _registryReady = null;
+    await _ensureRegistry();
+  };
+
+  return AICortex;
+}));

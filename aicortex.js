@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧠 AI Cortex — Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0f;
+      color: #e2e2ec;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1rem 4rem;
+      gap: 1.5rem;
+    }
+
+    header { text-align: center; }
+    header h1 {
+      font-size: 2.2rem; font-weight: 800;
+      background: linear-gradient(120deg, #4ade80, #60a5fa, #c084fc);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    header p { color: #71717a; margin-top: 0.4rem; font-size: 0.93rem; }
+
+    .card {
+      width: 100%; max-width: 740px;
+      background: #111118;
+      border: 1px solid #1e1e2e;
+      border-radius: 14px;
+      padding: 1.5rem;
+    }
+
+    .card-title {
+      font-size: 0.75rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: #60a5fa; margin-bottom: 1rem;
+    }
+
+    .row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+
+    select, textarea {
+      background: #0a0a0f; border: 1px solid #2a2a3e;
+      border-radius: 8px; color: #e2e2ec;
+      font-size: 0.875rem; padding: 0.6rem 0.8rem;
+      outline: none; transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    select:focus, textarea:focus { border-color: #60a5fa; }
+
+    #model-select { flex: 1; min-width: 180px; }
+
+    textarea {
+      width: 100%; resize: none;
+      min-height: 72px; max-height: 200px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #16a34a, #2563eb);
+      border: none; border-radius: 8px; color: #fff;
+      cursor: pointer; font-size: 0.875rem; font-weight: 600;
+      padding: 0.6rem 1.25rem; transition: opacity 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.85; }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.ghost { background: #1e1e2e; color: #a1a1aa; }
+
+    /* Output box */
+    .output {
+      background: #0a0a0f; border: 1px solid #1e1e2e;
+      border-radius: 8px; padding: 1rem;
+      min-height: 110px; font-size: 0.875rem;
+      line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+      color: #c4c4d4; transition: border-color 0.2s;
+    }
+    .output.err  { color: #f87171; border-color: #450a0a; }
+    .output.idle { color: #3f3f5a; }
+
+    /* Loading dots animation */
+    .loading-dots {
+      display: inline-flex; gap: 4px; align-items: center;
+      vertical-align: middle;
+    }
+    .loading-dots span {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #60a5fa;
+      animation: dotPulse 1.2s ease-in-out infinite;
+    }
+    .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotPulse {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40%            { opacity: 1;   transform: scale(1); }
+    }
+
+    /* Status bar above output */
+    .status-bar {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.72rem; color: #52525b;
+      margin-bottom: 0.5rem; min-height: 18px;
+    }
+    .status-bar .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #3f3f5a; flex-shrink: 0;
+    }
+    .status-bar.fetching .dot { background: #f59e0b; animation: dotPulse 1s infinite; }
+    .status-bar.streaming .dot { background: #60a5fa; animation: dotPulse 0.7s infinite; }
+    .status-bar.done .dot { background: #4ade80; animation: none; }
+    .status-bar.error .dot { background: #f87171; animation: none; }
+
+    /* Streaming cursor */
+    .cursor {
+      display: inline-block; width: 2px; height: 1em;
+      background: #60a5fa; animation: blink 0.85s step-end infinite;
+      vertical-align: text-bottom; margin-left: 1px;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* Model tags */
+    .tag {
+      display: inline-block; background: #1e1e2e;
+      border-radius: 5px; font-size: 0.72rem;
+      padding: 3px 8px; color: #9ca3af; margin: 2px;
+      cursor: pointer; transition: background 0.1s, color 0.1s;
+    }
+    .tag:hover { background: #252540; color: #e2e2ec; }
+    .tag.active { background: #16213e; color: #60a5fa; border: 1px solid #1d4ed8; }
+
+    .server-badge {
+      font-size: 0.75rem; color: #52525b;
+      background: #111118; border: 1px solid #1e1e2e;
+      border-radius: 6px; padding: 4px 10px;
+    }
+    .server-badge span { color: #4ade80; }
+
+    .session-pill {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      background: #1e1e2e; border-radius: 999px;
+      font-size: 0.75rem; padding: 3px 10px; color: #9ca3af;
+    }
+    .session-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; animation: none; }
+
+    .hint {
+      font-size: 0.72rem; color: #3f3f5a;
+      margin-top: 0.4rem; text-align: right;
+    }
+
+    code {
+      background: #1e1e2e; border-radius: 4px;
+      font-family: 'Consolas','Fira Code',monospace;
+      font-size: 0.8rem; padding: 1px 6px;
+    }
+    .snippet { font-size: 0.8rem; line-height: 2; color: #9ca3af; }
+    .snippet strong { color: #e2e2ec; }
+
+    /* Registry loading banner */
+    #registry-banner {
+      width: 100%; max-width: 740px;
+      background: #0f1a0f; border: 1px solid #1a3a1a;
+      border-radius: 10px; padding: 0.7rem 1rem;
+      font-size: 0.8rem; color: #4ade80;
+      display: flex; align-items: center; gap: 0.6rem;
+    }
+    #registry-banner.hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🧠 AI Cortex</h1>
+    <p>Free LLMs in your browser — no server, no API key, no signup</p>
+  </header>
+
+  <!-- Registry loading banner -->
+  <div id="registry-banner">
+    <div class="loading-dots"><span></span><span></span><span></span></div>
+    Fetching live model registry from GitHub…
+  </div>
+
+  <!-- Model picker -->
+  <div class="card">
+    <div class="card-title">🤖 Pick a Model</div>
+    <div class="row" style="margin-bottom:1rem">
+      <select id="model-select">
+        <option value="">Loading models…</option>
+      </select>
+      <div class="server-badge" id="server-badge">—</div>
+    </div>
+    <div id="model-tags"></div>
+  </div>
+
+  <!-- Chat -->
+  <div class="card">
+    <div class="card-title">💬 Chat</div>
+
+    <!-- Status + output -->
+    <div class="status-bar" id="status-bar">
+      <div class="dot"></div>
+      <span id="status-text">Ready</span>
+    </div>
+    <div class="output idle" id="output">Response will appear here…</div>
+
+    <!-- Input -->
+    <textarea id="prompt" placeholder="Type a message… (Enter to send, Shift+Enter for new line)" style="margin-top:1rem"></textarea>
+    <div class="hint">Enter ↵ send &nbsp;·&nbsp; Shift+Enter new line</div>
+
+    <div class="row" style="margin-top:0.75rem; justify-content:space-between">
+      <div class="row">
+        <button class="btn" id="btn-send" onclick="sendStream()">▶ Send</button>
+        <button class="btn ghost" id="btn-full" onclick="sendFull()">Full response</button>
+        <button class="btn ghost" onclick="newSession()">🔄 New session</button>
+      </div>
+      <div id="session-pill"></div>
+    </div>
+  </div>
+
+  <!-- Quick-start code -->
+  <div class="card">
+    <div class="card-title">⚡ 2-Line Quick Start</div>
+    <div class="snippet">
+      <strong>npm:</strong> <code>npm install aicortex</code><br>
+      <strong>CDN:</strong> <code>&lt;script src="https://unpkg.com/aicortex/aicortex.js"&gt;&lt;/script&gt;</code><br><br>
+      <code>const ai = new AICortex();</code><br>
+      <code>const reply = await ai.chat('Hello!');</code>
+    </div>
+  </div>
+
+  <script src="aicortex.js"></script>
+  <script>
+    // Point at GitHub raw as the registry source
+    AICortex.registryTTL = 60 * 60 * 1000; // 1 hour
+
+    const ai = new AICortex();
+    let session = null;
+
+    // ── Bootstrap — load live registry then populate UI ────────────────────────
+    (async function init() {
+      setStatus('fetching', 'Fetching live registry…');
+
+      try {
+        await ai.refreshRegistry();
+      } catch (_) {
+        // carry on — SDK returns empty gracefully
+      }
+
+      // Hide banner
+      document.getElementById('registry-banner').classList.add('hidden');
+
+      const models = ai.models();
+      const sel = document.getElementById('model-select');
+
+      if (!models.length) {
+        sel.innerHTML = '<option value="">No models found</option>';
+        setStatus('error', 'Registry empty — check your connection');
+        return;
+      }
+
+      sel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      sel.value = models.find(m => m.includes('llama3.2:3b') || m.includes('mistral:7b')) || models[0];
+      sel.addEventListener('change', updateServerBadge);
+
+      updateServerBadge();
+      renderTags();
+      setStatus('done', `${models.length} models loaded`);
+
+      // Fade status back to idle after 2s
+      setTimeout(() => setStatus('idle', 'Ready'), 2000);
+    })();
+
+    // ── Status bar ─────────────────────────────────────────────────────────────
+    function setStatus(state, text) {
+      const bar  = document.getElementById('status-bar');
+      const span = document.getElementById('status-text');
+      bar.className = `status-bar ${state}`;
+      span.textContent = text;
+    }
+
+    // ── Server badge ───────────────────────────────────────────────────────────
+    function updateServerBadge() {
+      const model = document.getElementById('model-select').value;
+      const s = ai.bestServer(model);
+      const el = document.getElementById('server-badge');
+      el.innerHTML = s
+        ? `<span>⚡ ${s.tps} t/s</span> · ${s.city}, ${s.country}`
+        : '— no server —';
+    }
+
+    // ── Family filter tags ─────────────────────────────────────────────────────
+    function renderTags() {
+      const fams = ai.families();
+      const el = document.getElementById('model-tags');
+      el.innerHTML = fams.map(f =>
+        `<span class="tag" onclick="filterFamily('${f}')">${f}</span>`
+      ).join('');
+    }
+
+    function filterFamily(fam) {
+      const models = ai.models(fam);
+      const sel = document.getElementById('model-select');
+      sel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      sel.value = models[0];
+      updateServerBadge();
+      document.querySelectorAll('.tag').forEach(t => {
+        t.className = t.textContent === fam ? 'tag active' : 'tag';
+      });
+    }
+
+    // ── Session ────────────────────────────────────────────────────────────────
+    function newSession() {
+      session = ai.session();
+      updateSessionPill();
+      setOutputIdle('Session started. Start a conversation!');
+    }
+
+    function updateSessionPill() {
+      const el = document.getElementById('session-pill');
+      if (!session) { el.innerHTML = ''; return; }
+      el.innerHTML = `<span class="session-pill"><span class="dot"></span>${session.id} · ${session.turns} turn(s)</span>`;
+    }
+
+    // ── Output helpers ─────────────────────────────────────────────────────────
+    function setOutputIdle(text) {
+      const el = document.getElementById('output');
+      el.className = 'output idle';
+      el.textContent = text;
+    }
+
+    function setOutputLoading() {
+      const el = document.getElementById('output');
+      el.className = 'output';
+      el.innerHTML = '<div class="loading-dots"><span></span><span></span><span></span></div>';
+    }
+
+    function setOutputErr(msg) {
+      const el = document.getElementById('output');
+      el.className = 'output err';
+      el.textContent = `❌ ${msg}`;
+    }
+
+    // ── Send (stream) ──────────────────────────────────────────────────────────
+    async function sendStream() {
+      const ta = document.getElementById('prompt');
+      const prompt = ta.value.trim();
+      if (!prompt) return;
+
+      // Clear textarea immediately
+      ta.value = '';
+      autoResize(ta);
+
+      disableBtns(true);
+      setOutputLoading();
+      setStatus('fetching', 'Connecting to server…');
+
+      const model = document.getElementById('model-select').value;
+      const outEl = document.getElementById('output');
+
+      try {
+        const stream = ai.stream(prompt, { model });
+        let full = '';
+        let firstToken = true;
+
+        for await (const token of stream) {
+          if (firstToken) {
+            outEl.className = 'output';
+            outEl.innerHTML = '';
+            setStatus('streaming', 'Streaming…');
+            firstToken = false;
+          }
+          full += token;
+          outEl.textContent = full;
+          outEl.innerHTML = escapeHtml(full) + '<span class="cursor"></span>';
+        }
+
+        outEl.textContent = full;
+        setStatus('done', 'Done');
+        setTimeout(() => setStatus('idle', 'Ready'), 2000);
+
+        if (session) {
+          session._push('user', prompt);
+          session._push('assistant', full);
+          updateSessionPill();
+        }
+      } catch (e) {
+        setOutputErr(e.message);
+        setStatus('error', 'Error');
+      } finally {
+        disableBtns(false);
+        ta.focus();
+      }
+    }
+
+    // ── Send (full) ────────────────────────────────────────────────────────────
+    async function sendFull() {
+      const ta = document.getElementById('prompt');
+      const prompt = ta.value.trim();
+      if (!prompt) return;
+
+      ta.value = '';
+      autoResize(ta);
+
+      disableBtns(true);
+      setOutputLoading();
+      setStatus('fetching', 'Waiting for response…');
+
+      const model = document.getElementById('model-select').value;
+
+      try {
+        const reply = await ai.chat(prompt, { model, session: session ?? undefined });
+        const outEl = document.getElementById('output');
+        outEl.className = 'output';
+        outEl.textContent = reply;
+        setStatus('done', 'Done');
+        setTimeout(() => setStatus('idle', 'Ready'), 2000);
+        if (session) updateSessionPill();
+      } catch (e) {
+        setOutputErr(e.message);
+        setStatus('error', 'Error');
+      } finally {
+        disableBtns(false);
+        ta.focus();
+      }
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function disableBtns(yes) {
+      ['btn-send', 'btn-full'].forEach(id => {
+        document.getElementById(id).disabled = yes;
+      });
+    }
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function autoResize(ta) {
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
+    }
+
+    // ── Keyboard: Enter = send, Shift+Enter = newline ──────────────────────────
+    const promptEl = document.getElementById('prompt');
+
+    promptEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendStream();
+      }
+      // Shift+Enter falls through naturally → inserts newline
+    });
+
+    promptEl.addEventListener('input', () => autoResize(promptEl));
+  </script>
+</body>
+</html>
