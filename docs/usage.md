@@ -397,7 +397,7 @@ Returns the list of model families bundled with the package (derived from JSON f
 from aicortex import families
 
 print(families())
-# ['deepseek', 'gemma', 'llama', 'mistral', 'qwen']
+# ['deepseek', 'gemma', 'llama', 'mistral', 'others', 'qwen']
 ```
 
 ### `models(family=None)` — List Models
@@ -412,6 +412,7 @@ print(f"{len(all_models)} models available")
 # Filter by family (case-insensitive)
 llama_models = models("llama")
 mistral_models = models("mistral")
+others_models = models("others")
 ```
 
 ### `get_model_info(model)` — Full Model Metadata

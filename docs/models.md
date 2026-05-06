@@ -4,13 +4,13 @@ AI Cortex ships with a built-in registry of hundreds of models hosted on communi
 
 ## 📦 Model Families
 
-AI Cortex groups models into five families: **llama**, **mistral**, **gemma**, **deepseek**, and **qwen**. Each family maps to a JSON file bundled inside the package.
+AI Cortex groups models into six families: **llama**, **mistral**, **gemma**, **deepseek**, **qwen**, and **others**. Each family maps to a JSON file bundled inside the package.
 
 ```python
 from aicortex import families
 
 print(families())
-# ['llama', 'mistral', 'gemma', 'deepseek', 'qwen']
+# ['llama', 'mistral', 'gemma', 'deepseek', 'qwen', 'others']
 ```
 
 ## 🔍 Listing Models
@@ -31,9 +31,11 @@ print(all_models[:5])
 ```python
 llama_models   = models("llama")
 mistral_models = models("mistral")
+others_models  = models("others")
 
 print("Llama:",   llama_models)
 print("Mistral:", mistral_models)
+print("Others:",  others_models)
 ```
 
 ### Checking model availability
@@ -236,7 +238,8 @@ aicortex/models/
 ├── mistral.json
 ├── gemma.json
 ├── deepseek.json
-└── qwen.json
+├── qwen.json
+└── others.json
 ```
 
 Each file uses a nested envelope matching the Ollama registry format:
