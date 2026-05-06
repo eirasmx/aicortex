@@ -182,7 +182,7 @@ class _OllamaAPI:
                                 model.pop('perf_response_text', None)
 
                         models.sort(
-                            key=lambda x: int(x.get('size', 0)) if isinstance(x.get('size'), (int, str)) else 0,
+                            key=lambda x: int(x.get('size') or 0),
                             reverse=True,
                         )
                         models_data[family_name] = models

@@ -84,13 +84,13 @@ def families() -> List[str]:
 
     Returns:
         A list of lowercase family name strings, e.g.
-        ``['deepseek', 'gemma', 'llama', 'mistral', 'qwen']``.
+        ``['deepseek', 'gemma', 'llama', 'mistral', 'others', 'qwen']``.
 
     Example::
 
         >>> from aicortex import families
         >>> print(families())
-        ['deepseek', 'gemma', 'llama', 'mistral', 'qwen']
+        ['deepseek', 'gemma', 'llama', 'mistral', 'others', 'qwen']
     """
     return _client.list_families()
 

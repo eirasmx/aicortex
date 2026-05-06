@@ -1,0 +1,47 @@
+{
+  "props": {
+    "pageProps": {
+      "models": [
+        {
+          "id": "d0083850-57d5-4b57-a334-dada6c231695",
+          "ip_port": "http://67.146.33.10:11434",
+          "model_name": "mistral-nemo:12b",
+          "model": "mistral-nemo:12b",
+          "modified_at": "2026-05-03T12:15:10.555526006Z",
+          "size": "7071713227",
+          "digest": "e7e06d107c6c86ed0cf45445f1790720b5092149c4c95f4d965844e9afbfdc89",
+          "parent_model": "",
+          "format": "gguf",
+          "family": "mistral",
+          "parameter_size": "12.2B",
+          "quantization_level": "Q4_0",
+          "date_added": "2026-05-06T10:03:37.702986+00:00",
+          "ip_city_name_en": "Annandale",
+          "ip_continent_code": "NA",
+          "ip_continent_name_en": "North America",
+          "ip_country_name_en": "United States",
+          "ip_country_iso_code": "US",
+          "ip_subdivision_1_name_en": "New Jersey",
+          "ip_subdivision_2_name_en": "",
+          "ip_autonomous_system_number": 19901,
+          "ip_autonomous_system_organization": "Brightspeed",
+          "ip_connection_type": "Corporate",
+          "ip_isp": "Brightspeed",
+          "ip_organization": "CenturyLink Communications, LLC",
+          "ip_user_type": "hosting",
+          "perf_response_text": "I am a language model trained by the Mistral AI team. (https://mistral.ai/)",
+          "perf_tokens": 21,
+          "perf_time_seconds": "3.654",
+          "perf_tokens_per_second": "48.23",
+          "perf_max_token_speed": "48.23",
+          "perf_avg_token_speed": "48.23",
+          "perf_first_token_time": "0.041",
+          "perf_model_size_bytes": "",
+          "perf_status": "success",
+          "perf_error": null,
+          "perf_last_tested": "2026-05-06T11:05:41.118271+00:00"
+        }
+      ]
+    }
+  }
+}
