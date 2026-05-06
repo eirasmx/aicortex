@@ -104,10 +104,11 @@ ai.models();
 // Filter by family
 ai.models('deepseek');   // → ['deepseek-r1:1.5b', 'deepseek-r1:7b', ...]
 ai.models('llama');      // → ['llama3.2:3b', 'llama3.2:latest', ...]
+ai.models('others');     // → ['nomic-embed-text', 'GLM-OCR:latest', 'llava:13b', ...]
 
 // List families
 ai.families();
-// → ['deepseek', 'gemma', 'llama', 'mistral', 'smollm', ...]
+// → ['deepseek', 'gemma', 'llama', 'mistral', 'others', 'smollm', ...]
 
 // Best server for a model (no network needed)
 ai.bestServer('mistral:7b');
@@ -249,4 +250,4 @@ Community Ollama servers may not have CORS headers configured. If you hit CORS e
 
 ## License
 
-[LGPL-3.0](../LICENSE) — free for open-source and commercial use.
+[LGPL-3.0](LICENSE) — free for open-source and commercial use.

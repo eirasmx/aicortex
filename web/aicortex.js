@@ -254,7 +254,7 @@
     const indexData = await _fetchJsonMirrors(_FAMILY_INDEX_SOURCES);
     if (Array.isArray(indexData)) families = indexData;
     if (!families || !families.length) {
-      families = ['deepseek', 'gemma', 'llama', 'mistral', 'qwen'];
+      families = ['deepseek', 'gemma', 'llama', 'mistral', 'others', 'qwen'];
     }
 
     const allEntries = [];
