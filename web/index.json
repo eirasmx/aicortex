@@ -3,5 +3,6 @@
   "gemma",
   "llama",
   "mistral",
-  "qwen"
+  "qwen",
+  "others"
 ]
